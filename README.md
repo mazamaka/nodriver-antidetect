@@ -2,7 +2,7 @@
 
 Antidetect browser на базе [nodriver](https://github.com/ultrafunkamsterdam/nodriver) с CDP-уровневым спуфингом fingerprint.
 
-**Версия: 2.5.1**
+**Версия: 2.6.0**
 
 ## Результаты CreepJS
 
@@ -97,6 +97,27 @@ async with AntidetectBrowser(session="my_session") as browser:
     page = await browser.get("https://example.com")
 ```
 
+### С расширениями Chrome
+
+```python
+# Загрузка распакованного расширения
+async with AntidetectBrowser(extensions=["./extensions/ublock"]) as browser:
+    page = await browser.get("https://example.com")
+
+# Несколько расширений
+async with AntidetectBrowser(
+    extensions=[
+        "./extensions/ublock",
+        "./extensions/metamask",
+    ]
+) as browser:
+    ...
+```
+
+**Требования к расширениям:**
+- Расширение должно быть распаковано (папка с `manifest.json`)
+- Поддерживаются Manifest V2 и V3
+
 ### SessionManager (продвинутое управление)
 
 ```python
@@ -165,6 +186,7 @@ AntidetectBrowser(
     session: str | None = None,                        # Имя сессии для persistence
     sessions_dir: str | Path | None = None,            # Директория сессий (default: ./sessions)
     browser_args: list[str] | None = None,             # Доп. аргументы Chrome
+    extensions: list[str | Path] | None = None,        # Пути к расширениям Chrome
 )
 ```
 

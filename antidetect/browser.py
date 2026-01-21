@@ -43,6 +43,7 @@ class AntidetectBrowser:
         sandbox: Use sandbox (set False for Docker)
         session: Session name for cookie persistence
         sessions_dir: Custom sessions directory
+        extensions: List of paths to unpacked Chrome extensions
     """
 
     def __init__(
@@ -55,6 +56,7 @@ class AntidetectBrowser:
         sandbox: bool = True,
         session: str | None = None,
         sessions_dir: str | Path | None = None,
+        extensions: list[str | Path] | None = None,
     ) -> None:
         self.config = config or AntidetectConfig()
         self.profile = self._resolve_profile(profile)
@@ -62,12 +64,13 @@ class AntidetectBrowser:
         self.headless = headless or self.config.headless
         self.browser_args = browser_args or []
         self.sandbox = sandbox
+        self.extensions = self._resolve_extensions(extensions)
 
         self._browser: uc.Browser | None = None
 
         # CDP and Chrome args handlers
         self._cdp_handler = CDPOverridesHandler(self.profile)
-        self._args_builder = ChromeArgsBuilder(self.profile, sandbox)
+        self._args_builder = ChromeArgsBuilder(self.profile, sandbox, self.extensions)
 
         # Session management
         self._session_name = session
@@ -93,6 +96,41 @@ class AntidetectBrowser:
                 return load_profile_from_json(profile)
             return get_profile(profile)
         return profile
+
+    def _resolve_extensions(self, extensions: list[str | Path] | None) -> list[Path]:
+        """Resolve and validate extension paths.
+
+        Args:
+            extensions: List of paths to unpacked extensions
+
+        Returns:
+            List of validated Path objects
+
+        Raises:
+            FileNotFoundError: If extension path doesn't exist
+            ValueError: If extension doesn't have manifest.json
+        """
+        if not extensions:
+            return []
+
+        resolved = []
+        for ext_path in extensions:
+            path = Path(ext_path).resolve()
+
+            if not path.exists():
+                raise FileNotFoundError(f"Extension not found: {path}")
+
+            if not path.is_dir():
+                raise ValueError(f"Extension must be a directory: {path}")
+
+            manifest = path / "manifest.json"
+            if not manifest.exists():
+                raise ValueError(f"Extension missing manifest.json: {path}")
+
+            resolved.append(path)
+            logger.debug(f"Extension loaded: {path.name}")
+
+        return resolved
 
     async def __aenter__(self) -> "AntidetectBrowser":
         await self.start()
