@@ -2,7 +2,7 @@
 
 Antidetect browser на базе [nodriver](https://github.com/ultrafunkamsterdam/nodriver) с CDP-уровневым спуфингом fingerprint.
 
-**Версия: 2.4.0**
+**Версия: 2.5.1**
 
 ## Результаты CreepJS
 
@@ -24,6 +24,19 @@ Antidetect browser на базе [nodriver](https://github.com/ultrafunkamsterda
 | Browser | Timezone, Locale | `Emulation.setTimezone/LocaleOverride` |
 | Chrome flags | Window size, Language | `--window-size`, `--lang` |
 | JS | Plugins, WebGL, Canvas | Stealth script |
+
+### Динамический User-Agent
+
+User-Agent генерируется **автоматически** на основе реальной версии установленного Chrome:
+
+```
+Реальный Chrome: 144.0.7559.59
+           ↓
+User-Agent: Mozilla/5.0 ... Chrome/144.0.7559.59 Safari/537.36
+Client Hints: brands=[Chrome/144, ...]
+```
+
+Это обеспечивает соответствие между UA и реальным браузером даже после обновления Chrome.
 
 ## Quick Start
 
