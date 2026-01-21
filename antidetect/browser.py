@@ -4,26 +4,26 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 import nodriver as uc
 from loguru import logger
 
 from .config import AntidetectConfig, FingerprintProfile, get_profile
 from .profiles import load_profile_from_json
-from .spoofing import apply_fingerprint_spoofing, generate_fingerprint, inject_spoofing_on_navigation
+from .stealth import apply_stealth, apply_stealth_to_page
+
+if TYPE_CHECKING:
+    pass
 
 
 class AntidetectBrowser:
     """
-    Antidetect browser wrapper for nodriver.
-
-    Provides fingerprint spoofing, proxy support, and stealth capabilities.
+    Antidetect browser with stealth fingerprint spoofing.
 
     Usage:
         async with AntidetectBrowser() as browser:
             page = await browser.get("https://example.com")
-            # ... do stuff
     """
 
     def __init__(
@@ -34,190 +34,117 @@ class AntidetectBrowser:
         headless: bool = False,
         browser_args: list[str] | None = None,
     ) -> None:
-        """
-        Initialize antidetect browser.
-
-        Args:
-            profile: Fingerprint profile. Can be:
-                - FingerprintProfile object
-                - str: predefined profile name ("default", "windows_chrome", etc.)
-                - str: path to JSON file (ends with .json)
-                - None: uses AD_PROFILE_PATH env var or creates from env vars
-            config: AntidetectConfig from environment variables
-            proxy: Proxy URL (socks5://user:pass@host:port)
-            headless: Run in headless mode (not recommended for antidetect)
-            browser_args: Additional Chrome arguments
-        """
         self.config = config or AntidetectConfig()
-
-        # Resolve profile
-        if profile is None:
-            # Use config (which checks AD_PROFILE_PATH first)
-            self.profile = self.config.to_profile()
-        elif isinstance(profile, str):
-            # Check if it's a path to JSON file
-            if profile.endswith(".json") or Path(profile).exists():
-                self.profile = load_profile_from_json(profile)
-            else:
-                # Try as predefined profile name
-                self.profile = get_profile(profile)
-        else:
-            self.profile = profile
-
-        # Generate unique fingerprint variations
-        self.profile = generate_fingerprint(self.profile)
-
-        # Proxy
+        self.profile = self._resolve_profile(profile)
         self.proxy = proxy or self.config.proxy_url or None
-
-        # Headless mode
         self.headless = headless or self.config.headless
-
-        # Browser arguments
         self.browser_args = browser_args or []
 
-        # Browser instance
         self._browser: uc.Browser | None = None
-        self._main_page: uc.Tab | None = None
+
+    def _resolve_profile(self, profile: FingerprintProfile | str | None) -> FingerprintProfile:
+        """Resolve profile from various input types."""
+        if profile is None:
+            return self.config.to_profile()
+        if isinstance(profile, str):
+            if profile.endswith(".json") or Path(profile).exists():
+                return load_profile_from_json(profile)
+            return get_profile(profile)
+        return profile
 
     async def __aenter__(self) -> "AntidetectBrowser":
-        """Async context manager entry."""
         await self.start()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Async context manager exit."""
+    async def __aexit__(self, *_) -> None:
         await self.stop()
 
-    def _build_browser_args(self) -> list[str]:
-        """Build Chrome arguments for antidetect."""
-        args = [
-            # Security
+    def _build_args(self) -> list[str]:
+        """Build Chrome arguments for stealth."""
+        p = self.profile
+        return [
+            # Core stealth
+            "--disable-blink-features=AutomationControlled",
+            "--disable-features=IsolateOrigins,site-per-process",
+
+            # Sandbox (required for Docker)
             "--no-sandbox",
             "--disable-setuid-sandbox",
-
-            # Disable automation detection
-            "--disable-blink-features=AutomationControlled",
-
-            # GPU and rendering
             "--disable-dev-shm-usage",
-            "--disable-gpu-sandbox",
 
-            # Disable infobars
+            # UI
             "--disable-infobars",
-
-            # Disable extensions except useful ones
             "--disable-extensions",
 
-            # Media - NOT using fake devices, we spoof via JS
-            # "--use-fake-device-for-media-stream",  # Creates extra fake devices
-            # "--use-fake-ui-for-media-stream",      # Not needed
+            # Fingerprint alignment
+            f"--lang={p.navigator.languages[0]}",
+            f"--window-size={p.screen.width},{p.screen.height}",
 
-            # Timezone (if set)
-            f"--timezone={self.profile.timezone.timezone}",
-
-            # Language
-            f"--lang={self.profile.navigator.languages[0]}",
-
-            # Window size
-            f"--window-size={self.profile.screen.width},{self.profile.screen.height}",
+            # Custom args
+            *self.browser_args,
         ]
 
-        # Add custom args
-        args.extend(self.browser_args)
-
-        return args
-
     async def start(self) -> "AntidetectBrowser":
-        """Start the browser."""
+        """Start browser with stealth enabled."""
         logger.info("Starting antidetect browser...")
-
-        # Prepare browser arguments
-        browser_args = self._build_browser_args()
-
-        # Prepare proxy if set
-        proxy_config = None
-        if self.proxy:
-            # Convert socks5:// to socks:// for nodriver
-            proxy_url = self.proxy.replace("socks5://", "socks://")
-            logger.info(f"Using proxy: {proxy_url[:30]}...")
 
         # Start browser
         self._browser = await uc.start(
             headless=self.headless,
-            browser_args=browser_args,
+            browser_args=self._build_args(),
         )
 
-        # Get main page
-        self._main_page = await self._browser.get("about:blank")
+        # Initialize stealth
+        await apply_stealth(self._browser, self.profile)
 
-        # Apply fingerprint spoofing
-        await apply_fingerprint_spoofing(self._main_page, self.profile)
-
-        logger.info(f"Browser started with profile: {self.profile.name}")
+        logger.info(f"Browser ready: {self.profile.name}")
         return self
 
     async def stop(self) -> None:
-        """Stop the browser."""
+        """Stop browser."""
         if self._browser:
             try:
                 self._browser.stop()
-                logger.info("Browser stopped")
             except Exception as e:
-                logger.warning(f"Error stopping browser: {e}")
+                logger.warning(f"Stop error: {e}")
             finally:
                 self._browser = None
-                self._main_page = None
 
     async def get(self, url: str, new_tab: bool = False) -> uc.Tab:
-        """
-        Navigate to URL.
-
-        Args:
-            url: URL to navigate to
-            new_tab: Open in new tab
-
-        Returns:
-            Page/Tab object
-        """
+        """Navigate to URL with stealth applied."""
         if not self._browser:
-            raise RuntimeError("Browser not started. Call start() first.")
+            raise RuntimeError("Browser not started")
 
         if new_tab:
             page = await self._browser.get(url, new_tab=True)
-            # Apply full spoofing to new tab
-            await apply_fingerprint_spoofing(page, self.profile)
         else:
-            page = await self._main_page.get(url)
-            # Re-inject spoofing after navigation
-            await inject_spoofing_on_navigation(page, self.profile)
+            tabs = self._browser.tabs
+            page = tabs[0] if tabs else await self._browser.get(url, new_tab=True)
+            await page.get(url)
 
+        # Inject stealth (CDP registration doesn't reliably trigger)
+        await apply_stealth_to_page(page, self.profile)
         return page
 
-    async def new_page(self) -> uc.Tab:
-        """Create new page/tab with fingerprint spoofing applied."""
+    async def new_tab(self, url: str = "about:blank") -> uc.Tab:
+        """Open new tab with stealth."""
         if not self._browser:
-            raise RuntimeError("Browser not started. Call start() first.")
-
-        page = await self._browser.get("about:blank", new_tab=True)
-        await apply_fingerprint_spoofing(page, self.profile)
-        return page
+            raise RuntimeError("Browser not started")
+        return await self._browser.get(url, new_tab=True)
 
     @property
     def browser(self) -> uc.Browser | None:
-        """Get underlying nodriver browser instance."""
+        """Underlying nodriver browser."""
         return self._browser
 
-    @property
-    def main_page(self) -> uc.Tab | None:
-        """Get main page/tab."""
-        return self._main_page
-
-    async def screenshot(self, path: str) -> None:
-        """Take screenshot of main page."""
-        if self._main_page:
-            await self._main_page.save_screenshot(path)
+    async def screenshot(self, path: str, page: uc.Tab | None = None) -> None:
+        """Take screenshot."""
+        if page is None:
+            tabs = self._browser.tabs  # sync property
+            page = tabs[0] if tabs else None
+        if page:
+            await page.save_screenshot(path)
 
     async def wait(self, seconds: float) -> None:
-        """Wait for specified seconds."""
+        """Wait helper."""
         await asyncio.sleep(seconds)

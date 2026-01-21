@@ -1,37 +1,31 @@
 """
-nodriver-antidetect - Antidetect browser module for nodriver.
+nodriver-antidetect - Stealth antidetect browser for nodriver.
 
-Provides fingerprint spoofing and stealth capabilities for web scraping.
-Supports loading fingerprint profiles from JSON files.
+Provides undetectable fingerprint spoofing for web automation.
 """
 
 from .browser import AntidetectBrowser
-from .config import AntidetectConfig, FingerprintProfile
+from .config import AntidetectConfig, FingerprintProfile, get_profile, get_random_profile
 from .profiles import (
-    load_profile_from_json,
-    load_profile_from_dict,
-    save_profile_to_json,
     list_profiles,
+    load_profile_from_dict,
+    load_profile_from_json,
+    save_profile_to_json,
 )
-from .spoofing import (
-    apply_fingerprint_spoofing,
-    generate_fingerprint,
-    get_random_profile,
-)
+from .stealth import apply_stealth, apply_stealth_to_page, build_stealth_script
 
-__version__ = "1.1.0"
+__version__ = "2.0.0"
 __all__ = [
-    # Browser
     "AntidetectBrowser",
     "AntidetectConfig",
     "FingerprintProfile",
-    # Profile loading
+    "get_profile",
+    "get_random_profile",
     "load_profile_from_json",
     "load_profile_from_dict",
     "save_profile_to_json",
     "list_profiles",
-    # Spoofing
-    "apply_fingerprint_spoofing",
-    "generate_fingerprint",
-    "get_random_profile",
+    "apply_stealth",
+    "apply_stealth_to_page",
+    "build_stealth_script",
 ]
