@@ -65,7 +65,7 @@ class AntidetectBrowser:
                 session,
                 profile_name=self.profile.name if self.profile else None,
                 user_agent=self.profile.navigator.user_agent if self.profile else None,
-            )
+            ).resolve()  # Absolute path required for Chrome
 
     def _resolve_profile(self, profile: FingerprintProfile | str | None) -> FingerprintProfile:
         """Resolve profile from various input types."""
@@ -125,6 +125,9 @@ class AntidetectBrowser:
             "--enable-webgl",
             "--enable-webgl2",
             "--ignore-gpu-blocklist",
+
+            # === Storage: disable encryption for portable sessions ===
+            "--password-store=basic",
 
             # Custom args from user
             *self.browser_args,
@@ -280,9 +283,20 @@ class AntidetectBrowser:
         return "6.5.0"
 
     async def stop(self) -> None:
-        """Stop browser."""
+        """Stop browser with graceful shutdown to ensure cookies are saved."""
         if self._browser:
             try:
+                # Graceful shutdown: close all tabs first (flushes cookies)
+                for tab in self._browser.tabs:
+                    try:
+                        await tab.close()
+                    except Exception:
+                        pass
+
+                # Wait for Chrome to flush data to disk
+                await asyncio.sleep(0.5)
+
+                # Then stop the browser process
                 self._browser.stop()
             except Exception as e:
                 logger.warning(f"Stop error: {e}")
