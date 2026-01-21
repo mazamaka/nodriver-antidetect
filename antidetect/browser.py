@@ -11,7 +11,7 @@ from loguru import logger
 
 from .config import AntidetectConfig, FingerprintProfile, get_profile
 from .profiles import load_profile_from_json
-from .spoofing import apply_fingerprint_spoofing, generate_fingerprint
+from .spoofing import apply_fingerprint_spoofing, generate_fingerprint, inject_spoofing_on_navigation
 
 
 class AntidetectBrowser:
@@ -109,9 +109,9 @@ class AntidetectBrowser:
             # Disable extensions except useful ones
             "--disable-extensions",
 
-            # Media
-            "--use-fake-device-for-media-stream",
-            "--use-fake-ui-for-media-stream",
+            # Media - NOT using fake devices, we spoof via JS
+            # "--use-fake-device-for-media-stream",  # Creates extra fake devices
+            # "--use-fake-ui-for-media-stream",      # Not needed
 
             # Timezone (if set)
             f"--timezone={self.profile.timezone.timezone}",
@@ -185,10 +185,12 @@ class AntidetectBrowser:
 
         if new_tab:
             page = await self._browser.get(url, new_tab=True)
-            # Apply spoofing to new tab
+            # Apply full spoofing to new tab
             await apply_fingerprint_spoofing(page, self.profile)
         else:
             page = await self._main_page.get(url)
+            # Re-inject spoofing after navigation
+            await inject_spoofing_on_navigation(page, self.profile)
 
         return page
 

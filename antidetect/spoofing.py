@@ -40,16 +40,16 @@ def _build_navigator_spoofing_js(nav: NavigatorConfig) -> str:
         user_agent = f"Mozilla/5.0 ({nav.platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
     languages_json = json.dumps(nav.languages)
+    primary_language = nav.languages[0] if nav.languages else "en-US"
 
     return f"""
-    // Navigator spoofing
-    const navigatorProps = {{
+    // Navigator spoofing via Navigator.prototype (more reliable)
+    const navOverrides = {{
         platform: '{nav.platform}',
         appVersion: '{nav.app_version}',
         userAgent: '{user_agent}',
         vendor: '{nav.vendor}',
-        language: '{nav.languages[0] if nav.languages else "en-US"}',
-        languages: {languages_json},
+        language: '{primary_language}',
         hardwareConcurrency: {nav.hardware_concurrency},
         deviceMemory: {nav.device_memory},
         maxTouchPoints: {nav.max_touch_points},
@@ -57,23 +57,39 @@ def _build_navigator_spoofing_js(nav: NavigatorConfig) -> str:
         doNotTrack: {f'"{nav.do_not_track}"' if nav.do_not_track else 'null'},
     }};
 
-    // Override navigator properties
-    for (const [key, value] of Object.entries(navigatorProps)) {{
+    // Override via prototype for better compatibility
+    for (const [key, value] of Object.entries(navOverrides)) {{
         if (value !== null && value !== undefined) {{
             try {{
-                Object.defineProperty(navigator, key, {{
-                    get: () => value,
+                Object.defineProperty(Navigator.prototype, key, {{
+                    get: function() {{ return value; }},
                     configurable: true
                 }});
-            }} catch (e) {{}}
+            }} catch (e1) {{
+                // Fallback to navigator instance
+                try {{
+                    Object.defineProperty(navigator, key, {{
+                        get: () => value,
+                        configurable: true
+                    }});
+                }} catch (e2) {{}}
+            }}
         }}
     }}
 
-    // Override navigator.languages (needs special handling)
-    Object.defineProperty(navigator, 'languages', {{
-        get: () => Object.freeze({languages_json}),
-        configurable: true
-    }});
+    // Override navigator.languages (frozen array)
+    const frozenLanguages = Object.freeze({languages_json});
+    try {{
+        Object.defineProperty(Navigator.prototype, 'languages', {{
+            get: function() {{ return frozenLanguages; }},
+            configurable: true
+        }});
+    }} catch (e) {{
+        Object.defineProperty(navigator, 'languages', {{
+            get: () => frozenLanguages,
+            configurable: true
+        }});
+    }}
     """
 
 
@@ -210,9 +226,10 @@ def _build_media_devices_spoofing_js(media: "FingerprintProfile.media_devices") 
 def _build_timezone_spoofing_js(tz: "FingerprintProfile.timezone") -> str:
     """Build JavaScript for timezone spoofing."""
     return f"""
-    // Timezone spoofing
+    // Timezone and Locale spoofing
     const targetTimezone = '{tz.timezone}';
     const targetOffset = {tz.offset};
+    const targetLocale = '{tz.locale}';
 
     // Override Date.prototype.getTimezoneOffset
     Date.prototype.getTimezoneOffset = function() {{
@@ -222,6 +239,10 @@ def _build_timezone_spoofing_js(tz: "FingerprintProfile.timezone") -> str:
     // Override Intl.DateTimeFormat
     const originalDateTimeFormat = Intl.DateTimeFormat;
     Intl.DateTimeFormat = function(locales, options) {{
+        // Force locale if not explicitly specified
+        if (!locales || (Array.isArray(locales) && locales.length === 0)) {{
+            locales = targetLocale;
+        }}
         options = options || {{}};
         options.timeZone = options.timeZone || targetTimezone;
         return new originalDateTimeFormat(locales, options);
@@ -229,12 +250,50 @@ def _build_timezone_spoofing_js(tz: "FingerprintProfile.timezone") -> str:
     Intl.DateTimeFormat.prototype = originalDateTimeFormat.prototype;
     Intl.DateTimeFormat.supportedLocalesOf = originalDateTimeFormat.supportedLocalesOf;
 
-    // Override resolvedOptions
+    // Override resolvedOptions to return our locale and timezone
     const originalResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
     Intl.DateTimeFormat.prototype.resolvedOptions = function() {{
         const result = originalResolvedOptions.call(this);
-        result.timeZone = targetTimezone;
-        return result;
+        // Create new object to bypass read-only properties
+        return {{
+            ...result,
+            locale: targetLocale,
+            timeZone: targetTimezone
+        }};
+    }};
+
+    // Override Intl.NumberFormat for locale consistency
+    const originalNumberFormat = Intl.NumberFormat;
+    Intl.NumberFormat = function(locales, options) {{
+        if (!locales || (Array.isArray(locales) && locales.length === 0)) {{
+            locales = targetLocale;
+        }}
+        return new originalNumberFormat(locales, options);
+    }};
+    Intl.NumberFormat.prototype = originalNumberFormat.prototype;
+    Intl.NumberFormat.supportedLocalesOf = originalNumberFormat.supportedLocalesOf;
+
+    const originalNFResolvedOptions = Intl.NumberFormat.prototype.resolvedOptions;
+    Intl.NumberFormat.prototype.resolvedOptions = function() {{
+        const result = originalNFResolvedOptions.call(this);
+        return {{ ...result, locale: targetLocale }};
+    }};
+
+    // Override Intl.Collator for locale consistency
+    const originalCollator = Intl.Collator;
+    Intl.Collator = function(locales, options) {{
+        if (!locales || (Array.isArray(locales) && locales.length === 0)) {{
+            locales = targetLocale;
+        }}
+        return new originalCollator(locales, options);
+    }};
+    Intl.Collator.prototype = originalCollator.prototype;
+    Intl.Collator.supportedLocalesOf = originalCollator.supportedLocalesOf;
+
+    const originalCollatorResolvedOptions = Intl.Collator.prototype.resolvedOptions;
+    Intl.Collator.prototype.resolvedOptions = function() {{
+        const result = originalCollatorResolvedOptions.call(this);
+        return {{ ...result, locale: targetLocale }};
     }};
     """
 
@@ -309,6 +368,8 @@ def build_spoofing_script(profile: FingerprintProfile) -> str:
         "",
         "// nodriver-antidetect fingerprint spoofing",
         f"// Profile: {profile.name}",
+        "window.__antidetect_applied = true;",
+        f"window.__antidetect_profile = '{profile.name}';",
         "",
         _build_navigator_spoofing_js(profile.navigator),
         _build_screen_spoofing_js(profile.screen),
@@ -349,18 +410,31 @@ async def apply_fingerprint_spoofing(
     script = build_spoofing_script(profile)
 
     try:
-        # Inject script using CDP with proper nodriver syntax
+        # Method 1: CDP addScriptToEvaluateOnNewDocument (for future navigations)
         await page.send(cdp.page.add_script_to_evaluate_on_new_document(
             source=script,
-            run_immediately=True,
         ))
-        logger.info(f"Applied fingerprint profile via CDP: {profile.name}")
+        logger.debug(f"Registered spoofing script via CDP for future documents")
     except Exception as e:
-        logger.warning(f"Failed to inject spoofing script via CDP: {e}")
-        # Fallback: try direct evaluation
-        try:
-            await page.evaluate(script)
-            logger.info(f"Applied fingerprint profile (fallback): {profile.name}")
-        except Exception as e2:
-            logger.error(f"Failed to apply fingerprint spoofing: {e2}")
-            raise
+        logger.warning(f"Failed to register CDP script: {e}")
+
+    try:
+        # Method 2: Direct evaluate (for current page context)
+        await page.evaluate(script)
+        logger.info(f"Applied fingerprint profile: {profile.name}")
+    except Exception as e:
+        logger.error(f"Failed to apply fingerprint spoofing: {e}")
+        raise
+
+
+async def inject_spoofing_on_navigation(page: "uc.Tab", profile: FingerprintProfile) -> None:
+    """
+    Re-inject spoofing script after navigation.
+
+    Call this after each page.get() to ensure spoofing is applied.
+    """
+    script = build_spoofing_script(profile)
+    try:
+        await page.evaluate(script)
+    except Exception as e:
+        logger.warning(f"Failed to re-inject spoofing after navigation: {e}")
