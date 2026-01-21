@@ -19,7 +19,7 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Start Xvfb with configured resolution
+# Start Xvfb with configured resolution (virtual display)
 start_xvfb() {
     # Sync display resolution with antidetect screen settings
     DISPLAY_WIDTH="${AD_SCREEN_WIDTH:-${DISPLAY_WIDTH:-1920}}"
@@ -48,6 +48,25 @@ start_xvfb() {
         log_error "Failed to start Xvfb"
         exit 1
     fi
+}
+
+# Setup display - either use host X11 or start Xvfb
+setup_display() {
+    # AD_SHOW_GUI=true - use host X11 display (requires -e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix)
+    if [ "${AD_SHOW_GUI}" = "true" ] || [ "${AD_SHOW_GUI}" = "1" ]; then
+        if [ -n "${DISPLAY}" ] && [ "${DISPLAY}" != ":99" ]; then
+            log_info "Using host X11 display: ${DISPLAY} (GUI mode)"
+            # Don't start Xvfb, use host display
+            return 0
+        else
+            log_warn "AD_SHOW_GUI=true but no host DISPLAY found. Falling back to Xvfb."
+            log_warn "To show GUI, run with: -e DISPLAY=\$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix"
+        fi
+    fi
+
+    # Default: start Xvfb (headless virtual display)
+    start_xvfb
+    export DISPLAY=:99
 }
 
 # Configure timezone at runtime
@@ -83,6 +102,8 @@ print_config() {
     echo "  Platform:    ${AD_PLATFORM}"
     echo "  Languages:   ${AD_LANGUAGES}"
     echo "  Proxy:       ${PROXY_URL:-none}"
+    echo "  GUI Mode:    ${AD_SHOW_GUI:-false}"
+    echo "  Display:     ${DISPLAY}"
     log_info "================================"
 }
 
@@ -94,11 +115,8 @@ main() {
     configure_timezone
     configure_locale
 
-    # Start display server
-    start_xvfb
-
-    # Export display
-    export DISPLAY=:99
+    # Setup display (Xvfb or host X11 if AD_SHOW_GUI=true)
+    setup_display
 
     # Print configuration
     print_config

@@ -45,6 +45,10 @@ ENV AD_PROFILE_PATH="/app/profiles/mazamaka_local.json"
 # Proxy settings
 ENV PROXY_URL=""
 
+# GUI settings - set to "true" to show browser window on host display
+# Requires: -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix
+ENV AD_SHOW_GUI="false"
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Core utilities
