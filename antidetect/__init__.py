@@ -18,9 +18,10 @@ from .profiles import (
     load_profile_from_json,
     save_profile_to_json,
 )
+from .session import SessionManager, SessionMetadata
 from .stealth import apply_stealth, apply_stealth_to_page, build_stealth_script
 
-__version__ = "2.3.0"
+__version__ = "2.4.0"
 __all__ = [
     # Browser
     "AntidetectBrowser",
@@ -35,6 +36,9 @@ __all__ = [
     "load_profile_from_dict",
     "save_profile_to_json",
     "list_profiles",
+    # Sessions
+    "SessionManager",
+    "SessionMetadata",
     # Stealth
     "apply_stealth",
     "apply_stealth_to_page",

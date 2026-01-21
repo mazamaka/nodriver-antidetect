@@ -20,7 +20,7 @@ from .profiles import load_profile_from_json
 from .stealth import build_stealth_script
 
 if TYPE_CHECKING:
-    pass
+    from .session import SessionManager
 
 
 class AntidetectBrowser:
@@ -40,6 +40,8 @@ class AntidetectBrowser:
         headless: bool = False,
         browser_args: list[str] | None = None,
         sandbox: bool = True,  # Set False for Docker
+        session: str | None = None,  # Session name for persistence
+        sessions_dir: str | Path | None = None,  # Custom sessions directory
     ) -> None:
         self.config = config or AntidetectConfig()
         self.profile = self._resolve_profile(profile)
@@ -49,6 +51,21 @@ class AntidetectBrowser:
         self.sandbox = sandbox  # True = no warning, False = needed for Docker
 
         self._browser: uc.Browser | None = None
+
+        # Session management
+        self._session_name = session
+        self._session_manager: "SessionManager | None" = None
+        self._user_data_dir: Path | None = None
+
+        if session:
+            from .session import SessionManager
+
+            self._session_manager = SessionManager(sessions_dir)
+            self._user_data_dir = self._session_manager.get_or_create(
+                session,
+                profile_name=self.profile.name if self.profile else None,
+                user_agent=self.profile.navigator.user_agent if self.profile else None,
+            )
 
     def _resolve_profile(self, profile: FingerprintProfile | str | None) -> FingerprintProfile:
         """Resolve profile from various input types."""
@@ -128,10 +145,18 @@ class AntidetectBrowser:
         """Start browser with stealth enabled at CDP level."""
         logger.info("Starting antidetect browser...")
 
+        # Lock session if using one
+        if self._session_manager and self._session_name:
+            if not self._session_manager.lock(self._session_name):
+                raise RuntimeError(
+                    f"Session '{self._session_name}' is already in use by another browser"
+                )
+
         # Start browser with stealth flags
         self._browser = await uc.start(
             headless=self.headless,
             browser_args=self._build_args(),
+            user_data_dir=self._user_data_dir,
         )
 
         # Apply CDP-level overrides to first tab
@@ -139,7 +164,8 @@ class AntidetectBrowser:
         if tabs:
             await self._apply_cdp_overrides(tabs[0])
 
-        logger.info(f"Browser ready: {self.profile.name}")
+        session_info = f", session={self._session_name}" if self._session_name else ""
+        logger.info(f"Browser ready: {self.profile.name}{session_info}")
         return self
 
     async def _apply_cdp_overrides(self, page: uc.Tab) -> None:
@@ -263,6 +289,10 @@ class AntidetectBrowser:
             finally:
                 self._browser = None
 
+        # Unlock session
+        if self._session_manager and self._session_name:
+            self._session_manager.unlock(self._session_name)
+
     async def get(self, url: str, new_tab: bool = False) -> uc.Tab:
         """Navigate to URL with CDP-level stealth applied BEFORE page loads.
 
@@ -323,3 +353,13 @@ class AntidetectBrowser:
     async def wait(self, seconds: float) -> None:
         """Wait helper."""
         await asyncio.sleep(seconds)
+
+    @property
+    def session_name(self) -> str | None:
+        """Current session name."""
+        return self._session_name
+
+    @property
+    def session_path(self) -> Path | None:
+        """Path to session directory (user_data_dir)."""
+        return self._user_data_dir

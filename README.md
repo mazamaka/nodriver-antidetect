@@ -2,7 +2,7 @@
 
 Antidetect browser на базе [nodriver](https://github.com/ultrafunkamsterdam/nodriver) с CDP-уровневым спуфингом fingerprint.
 
-**Версия: 2.3.0**
+**Версия: 2.4.0**
 
 ## Результаты CreepJS
 
@@ -70,6 +70,37 @@ async with AntidetectBrowser(profile="profiles/custom.json") as browser:
     ...
 ```
 
+### С сессией (persistent cookies/localStorage)
+
+```python
+# Сессия сохраняет cookies, localStorage, cache между запусками
+async with AntidetectBrowser(session="my_session") as browser:
+    page = await browser.get("https://example.com/login")
+    # ... login ...
+    # Cookies автоматически сохранятся в ./sessions/my_session/
+
+# При следующем запуске — уже залогинены!
+async with AntidetectBrowser(session="my_session") as browser:
+    page = await browser.get("https://example.com")
+```
+
+### SessionManager (продвинутое управление)
+
+```python
+from antidetect import SessionManager
+
+manager = SessionManager()
+
+# Список сессий
+sessions = manager.list()
+
+# Клонировать сессию
+manager.clone("session1", "session1_backup")
+
+# Удалить сессию
+manager.delete("old_session")
+```
+
 ## Профили
 
 Профили хранятся в `profiles/*.json`:
@@ -114,10 +145,12 @@ async with AntidetectBrowser(profile="profiles/custom.json") as browser:
 
 ```python
 AntidetectBrowser(
-    profile: str | FingerprintProfile | None = None,  # Профиль
+    profile: str | FingerprintProfile | None = None,  # Fingerprint профиль
     proxy: str | None = None,                          # Proxy URL
     headless: bool = False,                            # Headless режим
     sandbox: bool = True,                              # False для Docker
+    session: str | None = None,                        # Имя сессии для persistence
+    sessions_dir: str | Path | None = None,            # Директория сессий (default: ./sessions)
     browser_args: list[str] | None = None,             # Доп. аргументы Chrome
 )
 ```
@@ -199,12 +232,15 @@ nodriver-antidetect/
 │   ├── __init__.py      # Публичный API
 │   ├── browser.py       # AntidetectBrowser + CDP overrides
 │   ├── config.py        # Pydantic модели
+│   ├── session.py       # SessionManager для persistence
 │   ├── stealth.py       # JS stealth script
 │   └── profiles/
 │       └── loader.py    # Загрузка JSON профилей
-├── profiles/            # JSON профили
+├── profiles/            # JSON профили fingerprint
+├── sessions/            # Данные сессий (cookies, localStorage)
 ├── examples/
 │   ├── basic_usage.py
+│   ├── session_example.py
 │   └── test_fingerprint.py
 ├── CLAUDE.md            # Контекст для AI-агентов
 └── README.md
