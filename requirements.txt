@@ -1,18 +1,16 @@
 # Core browser automation
-nodriver>=0.38
+nodriver>=0.48.0
 
-# Cloudflare bypass (optional)
-# Install from git if needed:
-# git+https://github.com/user/nodriver-cf-verify.git
-
-# Utilities
-loguru>=0.7.0
-pydantic>=2.0.0
+# Configuration & validation
+pydantic>=2.10.0
 pydantic-settings>=2.0.0
 
+# Logging
+loguru>=0.7.0
+
 # HTTP client for proxy testing
-httpx>=0.27.0
+httpx>=0.28.0
 httpx[socks]
 
-# For fingerprint generation
+# For fingerprint generation (optional)
 faker>=25.0.0
