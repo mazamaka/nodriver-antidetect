@@ -23,6 +23,37 @@ from ..config import (
     WebGLConfig,
 )
 
+# Browser chrome height for avail_height calculation
+_BROWSER_CHROME_HEIGHT = 40
+
+# Cached defaults to avoid creating new instances repeatedly
+_DEFAULTS: dict[str, Any] = {}
+
+
+def _get_defaults(config_class: type) -> Any:
+    """Get or create cached default instance of config class."""
+    name = config_class.__name__
+    if name not in _DEFAULTS:
+        _DEFAULTS[name] = config_class()
+    return _DEFAULTS[name]
+
+
+def _get(data: dict, *keys: str, default: Any = None) -> Any:
+    """Get value from dict trying multiple keys (snake_case, camelCase).
+
+    Args:
+        data: Source dictionary
+        *keys: Keys to try in order (first found wins)
+        default: Default value if no key found
+
+    Returns:
+        Value from dict or default
+    """
+    for key in keys:
+        if key in data:
+            return data[key]
+    return default
+
 
 def load_profile_from_json(path: str | Path) -> FingerprintProfile:
     """
@@ -68,70 +99,80 @@ def load_profile_from_dict(data: dict[str, Any], name: str = "custom") -> Finger
 
 def _parse_profile(data: dict[str, Any], name: str) -> FingerprintProfile:
     """Парсинг данных профиля в FingerprintProfile."""
+    # Cached defaults
+    wgl_def = _get_defaults(WebGLConfig)
+    scr_def = _get_defaults(ScreenConfig)
+    nav_def = _get_defaults(NavigatorConfig)
+    media_def = _get_defaults(MediaDevicesConfig)
+    tz_def = _get_defaults(TimezoneConfig)
+    fp_def = _get_defaults(FingerprintProfile)
 
-    # Получаем имя профиля
     profile_name = data.get("name", name)
 
-    # WebGL конфигурация
-    webgl_data = data.get("webgl", {})
+    # WebGL
+    wgl = data.get("webgl", {})
+    vendor = _get(wgl, "vendor", default=wgl_def.vendor)
+    renderer = _get(wgl, "renderer", default=wgl_def.renderer)
     webgl = WebGLConfig(
-        vendor=webgl_data.get("vendor", WebGLConfig().vendor),
-        renderer=webgl_data.get("renderer", WebGLConfig().renderer),
-        unmasked_vendor=webgl_data.get("unmasked_vendor", webgl_data.get("vendor", WebGLConfig().unmasked_vendor)),
-        unmasked_renderer=webgl_data.get("unmasked_renderer", webgl_data.get("renderer", WebGLConfig().unmasked_renderer)),
+        vendor=vendor,
+        renderer=renderer,
+        unmasked_vendor=_get(wgl, "unmasked_vendor", default=vendor),
+        unmasked_renderer=_get(wgl, "unmasked_renderer", default=renderer),
     )
 
-    # Screen конфигурация
-    screen_data = data.get("screen", {})
+    # Screen
+    scr = data.get("screen", {})
+    width = _get(scr, "width", default=scr_def.width)
+    height = _get(scr, "height", default=scr_def.height)
     screen = ScreenConfig(
-        width=screen_data.get("width", ScreenConfig().width),
-        height=screen_data.get("height", ScreenConfig().height),
-        avail_width=screen_data.get("avail_width", screen_data.get("availWidth", screen_data.get("width", ScreenConfig().avail_width))),
-        avail_height=screen_data.get("avail_height", screen_data.get("availHeight", screen_data.get("height", ScreenConfig().avail_height) - 40)),
-        color_depth=screen_data.get("color_depth", screen_data.get("colorDepth", ScreenConfig().color_depth)),
-        pixel_depth=screen_data.get("pixel_depth", screen_data.get("pixelDepth", ScreenConfig().pixel_depth)),
-        device_pixel_ratio=screen_data.get("device_pixel_ratio", screen_data.get("devicePixelRatio", ScreenConfig().device_pixel_ratio)),
+        width=width,
+        height=height,
+        avail_width=_get(scr, "avail_width", "availWidth", default=width),
+        avail_height=_get(scr, "avail_height", "availHeight", default=height - _BROWSER_CHROME_HEIGHT),
+        color_depth=_get(scr, "color_depth", "colorDepth", default=scr_def.color_depth),
+        pixel_depth=_get(scr, "pixel_depth", "pixelDepth", default=scr_def.pixel_depth),
+        device_pixel_ratio=_get(scr, "device_pixel_ratio", "devicePixelRatio", default=scr_def.device_pixel_ratio),
     )
 
-    # Navigator конфигурация
-    nav_data = data.get("navigator", {})
-    languages = nav_data.get("languages", NavigatorConfig().languages)
+    # Navigator
+    nav = data.get("navigator", {})
+    languages = _get(nav, "languages", default=nav_def.languages)
     if isinstance(languages, str):
         languages = [lang.strip() for lang in languages.split(",")]
 
     navigator = NavigatorConfig(
-        platform=nav_data.get("platform", NavigatorConfig().platform),
-        app_version=nav_data.get("app_version", nav_data.get("appVersion", NavigatorConfig().app_version)),
-        user_agent=nav_data.get("user_agent", nav_data.get("userAgent", NavigatorConfig().user_agent)),
-        vendor=nav_data.get("vendor", NavigatorConfig().vendor),
+        platform=_get(nav, "platform", default=nav_def.platform),
+        app_version=_get(nav, "app_version", "appVersion", default=nav_def.app_version),
+        user_agent=_get(nav, "user_agent", "userAgent", default=nav_def.user_agent),
+        vendor=_get(nav, "vendor", default=nav_def.vendor),
         languages=languages,
-        hardware_concurrency=nav_data.get("hardware_concurrency", nav_data.get("hardwareConcurrency", NavigatorConfig().hardware_concurrency)),
-        device_memory=nav_data.get("device_memory", nav_data.get("deviceMemory", NavigatorConfig().device_memory)),
-        max_touch_points=nav_data.get("max_touch_points", nav_data.get("maxTouchPoints", NavigatorConfig().max_touch_points)),
-        do_not_track=nav_data.get("do_not_track", nav_data.get("doNotTrack")),
-        webdriver=nav_data.get("webdriver", False),
+        hardware_concurrency=_get(nav, "hardware_concurrency", "hardwareConcurrency", default=nav_def.hardware_concurrency),
+        device_memory=_get(nav, "device_memory", "deviceMemory", default=nav_def.device_memory),
+        max_touch_points=_get(nav, "max_touch_points", "maxTouchPoints", default=nav_def.max_touch_points),
+        do_not_track=_get(nav, "do_not_track", "doNotTrack", default=None),
+        webdriver=_get(nav, "webdriver", default=False),
     )
 
-    # Media devices конфигурация
-    media_data = data.get("media_devices", data.get("mediaDevices", {}))
+    # Media devices
+    media = _get(data, "media_devices", "mediaDevices", default={})
     media_devices = MediaDevicesConfig(
-        has_audio_input=media_data.get("has_audio_input", media_data.get("hasAudioInput", MediaDevicesConfig().has_audio_input)),
-        has_audio_output=media_data.get("has_audio_output", media_data.get("hasAudioOutput", MediaDevicesConfig().has_audio_output)),
-        has_video_input=media_data.get("has_video_input", media_data.get("hasVideoInput", MediaDevicesConfig().has_video_input)),
-        audio_inputs=media_data.get("audio_inputs", media_data.get("audioInputs", MediaDevicesConfig().audio_inputs)),
-        audio_outputs=media_data.get("audio_outputs", media_data.get("audioOutputs", MediaDevicesConfig().audio_outputs)),
-        video_inputs=media_data.get("video_inputs", media_data.get("videoInputs", MediaDevicesConfig().video_inputs)),
+        has_audio_input=_get(media, "has_audio_input", "hasAudioInput", default=media_def.has_audio_input),
+        has_audio_output=_get(media, "has_audio_output", "hasAudioOutput", default=media_def.has_audio_output),
+        has_video_input=_get(media, "has_video_input", "hasVideoInput", default=media_def.has_video_input),
+        audio_inputs=_get(media, "audio_inputs", "audioInputs", default=media_def.audio_inputs),
+        audio_outputs=_get(media, "audio_outputs", "audioOutputs", default=media_def.audio_outputs),
+        video_inputs=_get(media, "video_inputs", "videoInputs", default=media_def.video_inputs),
     )
 
-    # Timezone конфигурация
-    tz_data = data.get("timezone", {})
+    # Timezone
+    tz = data.get("timezone", {})
     timezone = TimezoneConfig(
-        timezone=tz_data.get("timezone", tz_data.get("name", TimezoneConfig().timezone)),
-        locale=tz_data.get("locale", TimezoneConfig().locale),
-        offset=tz_data.get("offset", TimezoneConfig().offset),
+        timezone=_get(tz, "timezone", "name", default=tz_def.timezone),
+        locale=_get(tz, "locale", default=tz_def.locale),
+        offset=_get(tz, "offset", default=tz_def.offset),
     )
 
-    # Создаём профиль
+    # Profile
     profile = FingerprintProfile(
         name=profile_name,
         webgl=webgl,
@@ -139,10 +180,10 @@ def _parse_profile(data: dict[str, Any], name: str) -> FingerprintProfile:
         navigator=navigator,
         media_devices=media_devices,
         timezone=timezone,
-        canvas_noise=data.get("canvas_noise", data.get("canvasNoise", FingerprintProfile().canvas_noise)),
-        audio_noise=data.get("audio_noise", data.get("audioNoise", FingerprintProfile().audio_noise)),
-        webrtc_enabled=data.get("webrtc_enabled", data.get("webrtcEnabled", FingerprintProfile().webrtc_enabled)),
-        webrtc_local_ips_hidden=data.get("webrtc_local_ips_hidden", data.get("webrtcLocalIpsHidden", FingerprintProfile().webrtc_local_ips_hidden)),
+        canvas_noise=_get(data, "canvas_noise", "canvasNoise", default=fp_def.canvas_noise),
+        audio_noise=_get(data, "audio_noise", "audioNoise", default=fp_def.audio_noise),
+        webrtc_enabled=_get(data, "webrtc_enabled", "webrtcEnabled", default=fp_def.webrtc_enabled),
+        webrtc_local_ips_hidden=_get(data, "webrtc_local_ips_hidden", "webrtcLocalIpsHidden", default=fp_def.webrtc_local_ips_hidden),
     )
 
     logger.info(f"Loaded profile: {profile_name}")

@@ -4,8 +4,11 @@
 Все профили хранятся в директории profiles/ в корне проекта.
 """
 
-from pathlib import Path
+from __future__ import annotations
+
 from functools import lru_cache
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .loader import (
     get_profile_path,
@@ -16,12 +19,15 @@ from .loader import (
     save_profile_to_json,
 )
 
+if TYPE_CHECKING:
+    from ..config import FingerprintProfile
+
 # Директория с профилями
 PROFILES_DIR = Path(__file__).parent.parent.parent / "profiles"
 
 
 @lru_cache(maxsize=1)
-def get_default_profile():
+def get_default_profile() -> "FingerprintProfile | None":
     """Загрузить профиль по умолчанию из JSON."""
     default_path = PROFILES_DIR / "mazamaka_local.json"
     if default_path.exists():
