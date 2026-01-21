@@ -13,19 +13,21 @@ from pydantic_settings import BaseSettings
 class WebGLConfig(BaseModel):
     """WebGL fingerprint configuration."""
 
-    vendor: str = "Google Inc. (NVIDIA)"
-    renderer: str = "ANGLE (NVIDIA, NVIDIA GeForce GTX 1080/PCIe/SSE2, OpenGL 4.5)"
-    unmasked_vendor: str = "Google Inc. (NVIDIA)"
-    unmasked_renderer: str = "ANGLE (NVIDIA, NVIDIA GeForce GTX 1080/PCIe/SSE2, OpenGL 4.5)"
+    # Default: RTX 3060 (mazamaka local)
+    vendor: str = "Google Inc. (NVIDIA Corporation)"
+    renderer: str = "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)"
+    unmasked_vendor: str = "Google Inc. (NVIDIA Corporation)"
+    unmasked_renderer: str = "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)"
 
 
 class ScreenConfig(BaseModel):
     """Screen configuration."""
 
-    width: int = 1920
-    height: int = 1080
-    avail_width: int = 1920
-    avail_height: int = 1040
+    # Default: 3440x1440 ultrawide (mazamaka local)
+    width: int = 3440
+    height: int = 1440
+    avail_width: int = 3374
+    avail_height: int = 1408
     color_depth: int = 24
     pixel_depth: int = 24
     device_pixel_ratio: float = 1.0
@@ -35,11 +37,11 @@ class NavigatorConfig(BaseModel):
     """Navigator properties configuration."""
 
     platform: str = "Linux x86_64"
-    app_version: str = "5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    user_agent: str = ""  # Auto-generated if empty
+    app_version: str = "5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+    user_agent: str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
     vendor: str = "Google Inc."
-    languages: list[str] = Field(default_factory=lambda: ["en-US", "en"])
-    hardware_concurrency: int = 8
+    languages: list[str] = Field(default_factory=lambda: ["ru", "en-US", "en", "uk"])
+    hardware_concurrency: int = 12
     device_memory: int = 8
     max_touch_points: int = 0
     do_not_track: str | None = None
@@ -49,19 +51,21 @@ class NavigatorConfig(BaseModel):
 class MediaDevicesConfig(BaseModel):
     """Media devices configuration for camera/microphone spoofing."""
 
+    # Default: 3 devices (mazamaka local: mic, audio, webcam)
     has_audio_input: bool = True
     has_audio_output: bool = True
     has_video_input: bool = True
     audio_inputs: int = 1
-    audio_outputs: int = 2
+    audio_outputs: int = 1
     video_inputs: int = 1
 
 
 class TimezoneConfig(BaseModel):
     """Timezone configuration."""
 
-    timezone: str = "Europe/Berlin"
-    locale: str = "en-US"
+    # Default: Europe/Budapest (mazamaka local)
+    timezone: str = "Europe/Budapest"
+    locale: str = "ru"
     offset: int = -60  # Minutes from UTC
 
 
@@ -89,31 +93,34 @@ class FingerprintProfile(BaseModel):
 class AntidetectConfig(BaseSettings):
     """Main antidetect configuration from environment variables."""
 
-    # Timezone
-    timezone: str = Field(default="Europe/Berlin", alias="AD_TIMEZONE")
-    locale: str = Field(default="en-US", alias="AD_LOCALE")
+    # Timezone (default: mazamaka local)
+    timezone: str = Field(default="Europe/Budapest", alias="AD_TIMEZONE")
+    locale: str = Field(default="ru", alias="AD_LOCALE")
 
-    # Screen
-    screen_width: int = Field(default=1920, alias="AD_SCREEN_WIDTH")
-    screen_height: int = Field(default=1080, alias="AD_SCREEN_HEIGHT")
+    # Screen (default: 3440x1440 ultrawide)
+    screen_width: int = Field(default=3440, alias="AD_SCREEN_WIDTH")
+    screen_height: int = Field(default=1440, alias="AD_SCREEN_HEIGHT")
 
-    # Hardware
+    # Hardware (default: mazamaka local - 12 cores, 8GB RAM)
     device_memory: int = Field(default=8, alias="AD_DEVICE_MEMORY")
-    hardware_concurrency: int = Field(default=8, alias="AD_HARDWARE_CONCURRENCY")
+    hardware_concurrency: int = Field(default=12, alias="AD_HARDWARE_CONCURRENCY")
     platform: str = Field(default="Linux x86_64", alias="AD_PLATFORM")
 
-    # WebGL
+    # WebGL (default: RTX 3060)
     webgl_vendor: str = Field(
-        default="Google Inc. (NVIDIA)", alias="AD_WEBGL_VENDOR"
+        default="Google Inc. (NVIDIA Corporation)", alias="AD_WEBGL_VENDOR"
     )
     webgl_renderer: str = Field(
-        default="ANGLE (NVIDIA, NVIDIA GeForce GTX 1080/PCIe/SSE2, OpenGL 4.5)",
+        default="ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)",
         alias="AD_WEBGL_RENDERER",
     )
 
-    # User Agent
-    user_agent: str = Field(default="", alias="AD_USER_AGENT")
-    languages: str = Field(default="en-US,en", alias="AD_LANGUAGES")
+    # User Agent (default: Chrome 144)
+    user_agent: str = Field(
+        default="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+        alias="AD_USER_AGENT"
+    )
+    languages: str = Field(default="ru,en-US,en,uk", alias="AD_LANGUAGES")
 
     # Proxy
     proxy_url: str = Field(default="", alias="PROXY_URL")
@@ -182,15 +189,48 @@ class AntidetectConfig(BaseSettings):
 
 # Predefined profiles for different scenarios
 PROFILES: dict[str, FingerprintProfile] = {
+    # Default profile - mazamaka local (target: like_headless <= 31%)
+    "default": FingerprintProfile(
+        name="mazamaka_local",
+        navigator=NavigatorConfig(
+            platform="Linux x86_64",
+            app_version="5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+            hardware_concurrency=12,
+            device_memory=8,
+            languages=["ru", "en-US", "en", "uk"],
+        ),
+        screen=ScreenConfig(
+            width=3440, height=1440,
+            avail_width=3374, avail_height=1408,
+        ),
+        webgl=WebGLConfig(
+            vendor="Google Inc. (NVIDIA Corporation)",
+            renderer="ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)",
+            unmasked_vendor="Google Inc. (NVIDIA Corporation)",
+            unmasked_renderer="ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)",
+        ),
+        timezone=TimezoneConfig(
+            timezone="Europe/Budapest",
+            locale="ru",
+            offset=-60,
+        ),
+        media_devices=MediaDevicesConfig(
+            audio_inputs=1,
+            audio_outputs=1,
+            video_inputs=1,
+        ),
+    ),
     "windows_chrome": FingerprintProfile(
         name="windows_chrome",
         navigator=NavigatorConfig(
             platform="Win32",
             app_version="5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
             hardware_concurrency=8,
             device_memory=8,
         ),
-        screen=ScreenConfig(width=1920, height=1080),
+        screen=ScreenConfig(width=1920, height=1080, avail_width=1920, avail_height=1040),
         webgl=WebGLConfig(
             vendor="Google Inc. (NVIDIA)",
             renderer="ANGLE (NVIDIA, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5)",
@@ -201,6 +241,7 @@ PROFILES: dict[str, FingerprintProfile] = {
         navigator=NavigatorConfig(
             platform="MacIntel",
             app_version="5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
             hardware_concurrency=10,
             device_memory=8,
         ),
@@ -217,6 +258,7 @@ PROFILES: dict[str, FingerprintProfile] = {
         navigator=NavigatorConfig(
             platform="Linux x86_64",
             app_version="5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
             hardware_concurrency=12,
             device_memory=16,
         ),

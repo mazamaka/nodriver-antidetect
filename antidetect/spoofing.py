@@ -7,6 +7,7 @@ import random
 import string
 from typing import TYPE_CHECKING
 
+import nodriver.cdp as cdp
 from loguru import logger
 
 from .config import FingerprintProfile, NavigatorConfig, get_random_profile
@@ -348,12 +349,12 @@ async def apply_fingerprint_spoofing(
     script = build_spoofing_script(profile)
 
     try:
-        # Inject script using CDP
-        await page.send(
-            "Page.addScriptToEvaluateOnNewDocument",
-            {"source": script},
-        )
-        logger.info(f"Applied fingerprint profile: {profile.name}")
+        # Inject script using CDP with proper nodriver syntax
+        await page.send(cdp.page.add_script_to_evaluate_on_new_document(
+            source=script,
+            run_immediately=True,
+        ))
+        logger.info(f"Applied fingerprint profile via CDP: {profile.name}")
     except Exception as e:
         logger.warning(f"Failed to inject spoofing script via CDP: {e}")
         # Fallback: try direct evaluation

@@ -21,6 +21,10 @@ log_error() {
 
 # Start Xvfb with configured resolution
 start_xvfb() {
+    # Sync display resolution with antidetect screen settings
+    DISPLAY_WIDTH="${AD_SCREEN_WIDTH:-${DISPLAY_WIDTH:-1920}}"
+    DISPLAY_HEIGHT="${AD_SCREEN_HEIGHT:-${DISPLAY_HEIGHT:-1080}}"
+
     log_info "Starting Xvfb display :99 (${DISPLAY_WIDTH}x${DISPLAY_HEIGHT}x${DISPLAY_DEPTH})"
 
     # Kill existing Xvfb if running
