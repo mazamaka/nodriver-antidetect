@@ -1,7 +1,7 @@
 # nodriver-antidetect
 
 Антидетект браузер на базе nodriver для автоматизации и мульти-аккаунтинга.
-Версия: 2.3.0
+Версия: 2.6.0
 
 ## Архитектура
 
@@ -126,6 +126,12 @@ async with AntidetectBrowser(profile="mazamaka_local") as browser:
     page = await browser.get("https://example.com")
 ```
 
+## Chrome Extensions
+
+Программная загрузка расширений **не поддерживается** — Google Chrome игнорирует `--load-extension` флаг.
+
+**Решение**: установите расширение вручную в профиль сессии, оно сохранится автоматически.
+
 ## Переменные окружения
 
 | Переменная | Описание | Default |
@@ -153,6 +159,96 @@ async with AntidetectBrowser(profile="mazamaka_local") as browser:
 - **pydantic** >= 2.0 - валидация конфигов
 - **pydantic-settings** >= 2.0 - env variables
 - **loguru** - логирование
+
+## Идеи на будущее
+
+### IP-based fingerprint (как в Octo Browser)
+
+Автоматическое определение параметров из IP прокси:
+
+```python
+# При proxy != None автоматически подтягивать:
+'languages': {'type': 'ip'},   # Определить язык по GeoIP
+'timezone': {'type': 'ip'},    # Определить timezone по GeoIP
+'geolocation': {'type': 'ip'}, # Координаты по GeoIP
+'webrtc': {'type': 'ip'},      # WebRTC leak = proxy IP
+```
+
+**Реализация:**
+1. Сделать запрос через прокси к GeoIP сервису (ipapi.co, ip-api.com)
+2. Получить: country, timezone, languages, lat/lon
+3. Автоматически применить к профилю
+
+**Польза:** Консистентный fingerprint — если прокси US, то и timezone/language будут US.
+
+---
+
+## Changelog v2.6.0 (2026-01-22)
+
+### Docker GPU Support (NVIDIA)
+
+**Проблема**: Chrome с `--no-sandbox` отключает GPU для безопасности.
+
+**Решение**: Флаг `--disable-gpu-sandbox` разрешает GPU при отключенном основном sandbox.
+
+#### Запуск с GPU в Docker
+
+```bash
+# Требования:
+# 1. Native Docker Engine (не Docker Desktop на Linux!)
+# 2. nvidia-container-toolkit установлен
+# 3. xhost +local: выполнен на хосте
+
+xhost +local:
+docker compose up antidetect-gpu
+```
+
+#### Конфигурация docker-compose.yml
+
+```yaml
+antidetect-gpu:
+  runtime: nvidia
+  devices:
+    - /dev/dri:/dev/dri
+    - /dev/nvidia0:/dev/nvidia0
+    - /dev/nvidiactl:/dev/nvidiactl
+    - /dev/nvidia-modeset:/dev/nvidia-modeset
+  environment:
+    - DISPLAY=${DISPLAY:-:1}
+    - AD_SHOW_GUI=true
+    - NVIDIA_VISIBLE_DEVICES=all
+    - NVIDIA_DRIVER_CAPABILITIES=all,graphics,display
+  volumes:
+    - /tmp/.X11-unix:/tmp/.X11-unix:rw
+```
+
+#### Результаты
+
+| Режим | GPU | WebGL confidence | like_headless |
+|-------|-----|------------------|---------------|
+| Docker + Xvfb | llvmpipe (software) | LOW | ~44% |
+| Docker + X11 GPU | NVIDIA RTX 3060 | HIGH | ~31% |
+| Локально | NVIDIA RTX 3060 | HIGH | 31% |
+
+**⚠️ Важно**: Docker Desktop на Linux НЕ поддерживает GPU — работает только Native Docker Engine.
+
+---
+
+## Changelog v2.5.1 (2026-01-21)
+
+### Dynamic User-Agent
+
+- User-Agent теперь генерируется динамически из реальной версии Chrome
+- При обновлении Chrome UA автоматически обновляется
+- Версия Chrome определяется через `get_chrome_version()`
+
+## Changelog v2.5.0 (2026-01-21)
+
+### Рефакторинг (SRP)
+
+- Выделен `CDPOverridesHandler` из browser.py
+- Выделен `ChromeArgsBuilder` из browser.py
+- JS код вынесен в отдельные файлы (antidetect/js/)
 
 ## Changelog v2.3.0 (2026-01-21)
 

@@ -9,7 +9,12 @@ services:
         LOCALE: en_US.UTF-8
     image: mazamaka/nodriver-antidetect:latest
     container_name: nodriver-antidetect
+    runtime: nvidia
+    devices:
+      - /dev/dri:/dev/dri
     environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
       # Timezone and Locale
       - AD_TIMEZONE=Europe/Berlin
       - AD_LOCALE=en-US
@@ -41,6 +46,50 @@ services:
     command: ["python", "/app/examples/test_fingerprint.py", "--output", "/output"]
 
     # Memory limit
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+  # GPU mode - uses host X11 display for real GPU WebGL rendering
+  # Run: docker-compose up antidetect-gpu
+  # Requires: xhost +local: (run on host before)
+  antidetect-gpu:
+    build:
+      context: .
+    image: mazamaka/nodriver-antidetect:latest
+    container_name: nodriver-antidetect-gpu
+    runtime: nvidia
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia-modeset:/dev/nvidia-modeset
+    environment:
+      # NVIDIA runtime
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all,graphics,display
+
+      # X11 forwarding - use host display with real GPU
+      - DISPLAY=${DISPLAY:-:1}
+      - AD_SHOW_GUI=true
+
+      # Fingerprint settings (mazamaka_local profile)
+      - AD_TIMEZONE=Europe/Budapest
+      - AD_LOCALE=ru
+      - AD_SCREEN_WIDTH=3440
+      - AD_SCREEN_HEIGHT=1440
+      - AD_DEVICE_MEMORY=8
+      - AD_HARDWARE_CONCURRENCY=12
+      - AD_PLATFORM=Linux x86_64
+      - AD_WEBGL_VENDOR=Google Inc. (NVIDIA Corporation)
+      - AD_WEBGL_RENDERER=ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)
+      - AD_LANGUAGES=ru,en-US,en,uk
+    volumes:
+      - ./output:/output
+      - ./examples:/app/examples:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    command: ["python", "/app/examples/test_fingerprint.py", "--output", "/output"]
     deploy:
       resources:
         limits:

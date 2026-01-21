@@ -28,7 +28,7 @@ async def test_fingerprint(output_dir: str = "/output") -> None:
     config = AntidetectConfig()
     logger.info(f"Config: timezone={config.timezone}, locale={config.locale}")
 
-    async with AntidetectBrowser(config=config) as browser:
+    async with AntidetectBrowser(config=config, sandbox=False) as browser:
         logger.info("Navigating to CreepJS...")
         page = await browser.get("https://abrahamjuliot.github.io/creepjs/")
 
