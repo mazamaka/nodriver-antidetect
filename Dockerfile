@@ -39,8 +39,8 @@ ENV AD_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, li
 ENV AD_LANGUAGES="ru,en-US,en,uk"
 
 # Profile settings - load fingerprint from JSON file
-# Set AD_PROFILE_PATH to use custom JSON profile (e.g., /profiles/custom.json)
-ENV AD_PROFILE_PATH=""
+# Default: mazamaka_local profile (target: like_headless <= 31%)
+ENV AD_PROFILE_PATH="/app/profiles/mazamaka_local.json"
 
 # Proxy settings
 ENV PROXY_URL=""
