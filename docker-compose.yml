@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  antidetect:
+    build:
+      context: .
+      args:
+        TIMEZONE: Europe/Berlin
+        LOCALE: en_US.UTF-8
+    image: mazamaka/nodriver-antidetect:latest
+    container_name: nodriver-antidetect
+    environment:
+      # Timezone and Locale
+      - AD_TIMEZONE=Europe/Berlin
+      - AD_LOCALE=en-US
+
+      # Screen resolution
+      - AD_SCREEN_WIDTH=1920
+      - AD_SCREEN_HEIGHT=1080
+
+      # Hardware spoofing
+      - AD_DEVICE_MEMORY=8
+      - AD_HARDWARE_CONCURRENCY=8
+      - AD_PLATFORM=Linux x86_64
+
+      # WebGL spoofing
+      - AD_WEBGL_VENDOR=Google Inc. (NVIDIA)
+      - AD_WEBGL_RENDERER=ANGLE (NVIDIA, NVIDIA GeForce GTX 1080/PCIe/SSE2, OpenGL 4.5)
+
+      # Languages
+      - AD_LANGUAGES=en-US,en
+
+      # Proxy (optional)
+      # - PROXY_URL=socks5://user:pass@proxy:port
+
+    volumes:
+      - ./output:/output
+      - ./examples:/app/examples:ro
+
+    # Keep container running for testing
+    command: ["python", "/app/examples/test_fingerprint.py", "--output", "/output"]
+
+    # Memory limit
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+  # Test service with different profile
+  antidetect-windows:
+    build: .
+    image: mazamaka/nodriver-antidetect:latest
+    environment:
+      - AD_TIMEZONE=America/New_York
+      - AD_LOCALE=en-US
+      - AD_SCREEN_WIDTH=1920
+      - AD_SCREEN_HEIGHT=1080
+      - AD_DEVICE_MEMORY=16
+      - AD_HARDWARE_CONCURRENCY=8
+      - AD_PLATFORM=Win32
+      - AD_WEBGL_VENDOR=Google Inc. (NVIDIA)
+      - AD_WEBGL_RENDERER=ANGLE (NVIDIA, NVIDIA GeForce RTX 3080/PCIe/SSE2, OpenGL 4.5)
+      - AD_LANGUAGES=en-US,en
+    volumes:
+      - ./output:/output
+    profiles:
+      - windows
