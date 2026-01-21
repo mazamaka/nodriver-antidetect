@@ -2,14 +2,16 @@
 Stealth fingerprint injection for nodriver.
 
 Key principles:
-1. Inject BEFORE page scripts execute (via CDP)
-2. Preserve native function signatures (toString)
-3. Make overrides undetectable by antifraud
+1. CDP-level first: Use CDP for what it supports (UA, timezone, locale)
+2. JS injection only for what CDP can't do (WebGL, plugins, canvas)
+3. Preserve native behavior: toString, prototype chain, instanceof
+4. No debug markers, no detectable patterns
 """
 
 from __future__ import annotations
 
 import json
+import secrets
 from typing import TYPE_CHECKING
 
 import nodriver.cdp as cdp
@@ -20,41 +22,86 @@ if TYPE_CHECKING:
     from .config import FingerprintProfile
 
 
-def build_stealth_script(profile: "FingerprintProfile") -> str:
-    """Build undetectable fingerprint spoofing script."""
+def _generate_plugins_config() -> list[dict]:
+    """Generate realistic Chrome plugins list (PDF viewers only in modern Chrome)."""
+    # Modern Chrome only has PDF plugins
+    return [
+        {
+            "name": "PDF Viewer",
+            "description": "Portable Document Format",
+            "filename": "internal-pdf-viewer",
+            "mimeTypes": [
+                {"type": "application/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
+                {"type": "text/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
+            ],
+        },
+        {
+            "name": "Chrome PDF Viewer",
+            "description": "Portable Document Format",
+            "filename": "internal-pdf-viewer",
+            "mimeTypes": [
+                {"type": "application/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
+                {"type": "text/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
+            ],
+        },
+        {
+            "name": "Chromium PDF Viewer",
+            "description": "Portable Document Format",
+            "filename": "internal-pdf-viewer",
+            "mimeTypes": [
+                {"type": "application/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
+                {"type": "text/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
+            ],
+        },
+        {
+            "name": "Microsoft Edge PDF Viewer",
+            "description": "Portable Document Format",
+            "filename": "internal-pdf-viewer",
+            "mimeTypes": [
+                {"type": "application/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
+                {"type": "text/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
+            ],
+        },
+        {
+            "name": "WebKit built-in PDF",
+            "description": "Portable Document Format",
+            "filename": "internal-pdf-viewer",
+            "mimeTypes": [
+                {"type": "application/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
+                {"type": "text/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
+            ],
+        },
+    ]
 
-    nav = profile.navigator
+
+def build_stealth_script(profile: "FingerprintProfile") -> str:
+    """
+    Build stealth script for things CDP cannot do.
+
+    NOTE: UA, timezone, locale are handled by CDP in browser.py
+    This script only handles: WebGL, plugins, screen, canvas, media devices, etc.
+    """
     scr = profile.screen
     wgl = profile.webgl
-    tz = profile.timezone
     media = profile.media_devices
 
-    # Generate fake device list
-    import secrets
+    # Generate fake device list (empty labels = no permission granted, realistic)
     devices = []
     for kind, count in [("audioinput", media.audio_inputs),
                         ("audiooutput", media.audio_outputs),
                         ("videoinput", media.video_inputs)]:
-        for i in range(count):
+        for _ in range(count):
             devices.append({
                 "deviceId": secrets.token_hex(32),
                 "kind": kind,
-                "label": "",  # Empty label = no permission granted (realistic)
+                "label": "",  # Empty until getUserMedia permission
                 "groupId": secrets.token_hex(32),
             })
 
+    plugins = _generate_plugins_config()
+
     config = {
-        "navigator": {
-            "platform": nav.platform,
-            "appVersion": nav.app_version,
-            "userAgent": nav.user_agent,
-            "vendor": nav.vendor,
-            "language": nav.languages[0] if nav.languages else "en-US",
-            "languages": nav.languages,
-            "hardwareConcurrency": nav.hardware_concurrency,
-            "deviceMemory": nav.device_memory,
-            "maxTouchPoints": nav.max_touch_points,
-        },
+        # Screen (CDP setDeviceMetricsOverride is detectable, so we use JS)
         "screen": {
             "width": scr.width,
             "height": scr.height,
@@ -66,202 +113,332 @@ def build_stealth_script(profile: "FingerprintProfile") -> str:
         "window": {
             "devicePixelRatio": scr.device_pixel_ratio,
             "innerWidth": scr.avail_width,
-            "innerHeight": scr.avail_height,
+            "innerHeight": scr.avail_height - 40,  # Realistic: browser chrome takes space
             "outerWidth": scr.width,
             "outerHeight": scr.height,
         },
+        # WebGL (CDP cannot spoof)
         "webgl": {
             "vendor": wgl.vendor,
             "renderer": wgl.renderer,
         },
-        "timezone": {
-            "zone": tz.timezone,
-            "offset": tz.offset,
-            "locale": tz.locale,
-        },
+        # Media devices (CDP cannot spoof)
         "media": {
             "devices": devices,
         },
+        # Canvas/audio noise for fingerprint uniqueness
         "noise": {
             "canvas": profile.canvas_noise,
             "audio": profile.audio_noise,
         },
+        # Plugins (CDP cannot spoof)
+        "plugins": plugins,
     }
 
     return f"""(function() {{
 'use strict';
 
-// Stealth marker for debugging
-window.__stealth_applied = true;
-window.__stealth_profile = '{profile.name}';
-
 const C = {json.dumps(config)};
 
-// === Utils: Make overrides undetectable ===
+// === Utility: Proper property definition ===
 const defineProperty = (obj, prop, desc) => {{
     try {{
         Object.defineProperty(obj, prop, {{ ...desc, configurable: true }});
     }} catch (e) {{}}
 }};
 
+// === Utility: Wrap function preserving native appearance ===
 const wrapFn = (original, replacement) => {{
-    // Preserve toString to avoid detection
-    replacement.toString = () => original.toString();
-    Object.defineProperty(replacement, 'name', {{ value: original.name }});
+    if (!original) return replacement;
+
+    // Match toString exactly
+    const origStr = original.toString();
+    replacement.toString = function() {{ return origStr; }};
+
+    // Match name
+    try {{
+        Object.defineProperty(replacement, 'name', {{
+            value: original.name,
+            configurable: true
+        }});
+    }} catch (e) {{}}
+
+    // Match length (number of arguments)
+    try {{
+        Object.defineProperty(replacement, 'length', {{
+            value: original.length,
+            configurable: true
+        }});
+    }} catch (e) {{}}
+
     return replacement;
 }};
 
+// === Utility: Wrap getter on prototype ===
 const wrapGetter = (proto, prop, getter) => {{
-    const original = Object.getOwnPropertyDescriptor(proto, prop);
-    if (!original?.get) return;
-    const wrapped = wrapFn(original.get, getter);
-    defineProperty(proto, prop, {{ get: wrapped, enumerable: original.enumerable }});
+    const desc = Object.getOwnPropertyDescriptor(proto, prop);
+    if (!desc?.get) return;
+
+    const wrapped = wrapFn(desc.get, getter);
+    defineProperty(proto, prop, {{
+        get: wrapped,
+        enumerable: desc.enumerable,
+        configurable: true
+    }});
 }};
 
-// === Navigator ===
-for (const [k, v] of Object.entries(C.navigator)) {{
-    if (k === 'languages') {{
-        wrapGetter(Navigator.prototype, k, function() {{ return Object.freeze([...v]); }});
-    }} else {{
-        wrapGetter(Navigator.prototype, k, function() {{ return v; }});
+// === Remove webdriver flag (critical) ===
+try {{
+    // Delete from prototype
+    const proto = Object.getPrototypeOf(navigator);
+    if ('webdriver' in proto) {{
+        delete proto.webdriver;
     }}
-}}
-// Remove webdriver
-delete Object.getPrototypeOf(navigator).webdriver;
+    // Also override getter
+    defineProperty(Navigator.prototype, 'webdriver', {{
+        get: () => undefined,
+        enumerable: true,
+        configurable: true
+    }});
+}} catch (e) {{}}
 
-// === Screen ===
+// === Navigator: pdfViewerEnabled (standard Chrome property) ===
+defineProperty(Navigator.prototype, 'pdfViewerEnabled', {{
+    get: () => true,
+    enumerable: true,
+    configurable: true
+}});
+
+// === Navigator: Plugins & MimeTypes ===
+// These MUST be spoofed via JS as CDP has no API for this
+(function() {{
+    const createPlugin = (data) => {{
+        const plugin = {{}};
+        const mimes = [];
+
+        data.mimeTypes.forEach((mt, i) => {{
+            const mimeType = {{
+                type: mt.type,
+                suffixes: mt.suffixes,
+                description: mt.description,
+                enabledPlugin: plugin
+            }};
+            mimes.push(mimeType);
+            plugin[i] = mimeType;
+            plugin[mt.type] = mimeType;
+        }});
+
+        Object.defineProperties(plugin, {{
+            name: {{ value: data.name, enumerable: true, configurable: true }},
+            description: {{ value: data.description, enumerable: true, configurable: true }},
+            filename: {{ value: data.filename, enumerable: true, configurable: true }},
+            length: {{ value: mimes.length, enumerable: true, configurable: true }},
+            item: {{ value: function(i) {{ return this[i] || null; }}, configurable: true }},
+            namedItem: {{ value: function(n) {{ return this[n] || null; }}, configurable: true }},
+            [Symbol.iterator]: {{ value: function*() {{ for (let i = 0; i < this.length; i++) yield this[i]; }}, configurable: true }}
+        }});
+
+        return plugin;
+    }};
+
+    const plugins = C.plugins.map(createPlugin);
+    const pluginArray = {{}};
+    const mimeTypes = {{}};
+    let mimeIdx = 0;
+
+    plugins.forEach((p, i) => {{
+        pluginArray[i] = p;
+        pluginArray[p.name] = p;
+
+        for (let j = 0; j < p.length; j++) {{
+            const mt = p[j];
+            if (!mimeTypes[mt.type]) {{
+                mimeTypes[mt.type] = mt;
+                mimeTypes[mimeIdx++] = mt;
+            }}
+        }}
+    }});
+
+    Object.defineProperties(pluginArray, {{
+        length: {{ value: plugins.length, enumerable: true, configurable: true }},
+        item: {{ value: function(i) {{ return this[i] || null; }}, configurable: true }},
+        namedItem: {{ value: function(n) {{ return this[n] || null; }}, configurable: true }},
+        refresh: {{ value: function() {{}}, configurable: true }},
+        [Symbol.iterator]: {{ value: function*() {{ for (let i = 0; i < this.length; i++) yield this[i]; }}, configurable: true }}
+    }});
+
+    Object.defineProperties(mimeTypes, {{
+        length: {{ value: mimeIdx, enumerable: true, configurable: true }},
+        item: {{ value: function(i) {{ return this[i] || null; }}, configurable: true }},
+        namedItem: {{ value: function(n) {{ return this[n] || null; }}, configurable: true }},
+        [Symbol.iterator]: {{ value: function*() {{ for (let i = 0; i < this.length; i++) yield this[i]; }}, configurable: true }}
+    }});
+
+    defineProperty(Navigator.prototype, 'plugins', {{
+        get: function() {{ return pluginArray; }},
+        enumerable: true,
+        configurable: true
+    }});
+
+    defineProperty(Navigator.prototype, 'mimeTypes', {{
+        get: function() {{ return mimeTypes; }},
+        enumerable: true,
+        configurable: true
+    }});
+}})();
+
+// === Screen properties (CDP setDeviceMetricsOverride is detectable!) ===
 for (const [k, v] of Object.entries(C.screen)) {{
     wrapGetter(Screen.prototype, k, function() {{ return v; }});
 }}
 
 // === Window dimensions ===
 for (const [k, v] of Object.entries(C.window)) {{
-    defineProperty(window, k, {{ get: () => v, configurable: true }});
+    defineProperty(window, k, {{
+        get: () => v,
+        enumerable: true,
+        configurable: true
+    }});
 }}
 
-// === WebGL ===
-const glParams = {{ 37445: C.webgl.vendor, 37446: C.webgl.renderer, 7936: 'WebKit', 7937: 'WebKit WebGL' }};
+// === WebGL vendor/renderer (CDP cannot spoof) ===
+const glParams = {{
+    37445: C.webgl.vendor,    // UNMASKED_VENDOR_WEBGL
+    37446: C.webgl.renderer,  // UNMASKED_RENDERER_WEBGL
+    7936: 'WebKit',           // VENDOR (standard)
+    7937: 'WebKit WebGL'      // RENDERER (standard)
+}};
+
 const patchGL = (proto) => {{
     const orig = proto.getParameter;
-    proto.getParameter = wrapFn(orig, function(p) {{
-        return glParams[p] ?? orig.call(this, p);
+    if (!orig) return;
+
+    proto.getParameter = wrapFn(orig, function(param) {{
+        const spoofed = glParams[param];
+        return spoofed !== undefined ? spoofed : orig.call(this, param);
     }});
 }};
-if (typeof WebGLRenderingContext !== 'undefined') patchGL(WebGLRenderingContext.prototype);
-if (typeof WebGL2RenderingContext !== 'undefined') patchGL(WebGL2RenderingContext.prototype);
 
-// === Timezone ===
-Date.prototype.getTimezoneOffset = wrapFn(
-    Date.prototype.getTimezoneOffset,
-    function() {{ return C.timezone.offset; }}
-);
+if (typeof WebGLRenderingContext !== 'undefined') {{
+    patchGL(WebGLRenderingContext.prototype);
+}}
+if (typeof WebGL2RenderingContext !== 'undefined') {{
+    patchGL(WebGL2RenderingContext.prototype);
+}}
 
-// Intl with proper locale
-const patchIntl = (Ctor) => {{
-    const Orig = Ctor;
-    const Patched = function(locales, options) {{
-        locales = locales || C.timezone.locale;
-        if (Ctor === Intl.DateTimeFormat) {{
-            options = {{ ...(options || {{}}), timeZone: options?.timeZone || C.timezone.zone }};
-        }}
-        return new Orig(locales, options);
-    }};
-    Patched.prototype = Orig.prototype;
-    Patched.supportedLocalesOf = Orig.supportedLocalesOf;
-
-    // Patch resolvedOptions
-    const origResolved = Orig.prototype.resolvedOptions;
-    Orig.prototype.resolvedOptions = wrapFn(origResolved, function() {{
-        const r = origResolved.call(this);
-        return {{ ...r, locale: C.timezone.locale, ...(Ctor === Intl.DateTimeFormat ? {{ timeZone: C.timezone.zone }} : {{}}) }};
-    }});
-
-    return Patched;
-}};
-Intl.DateTimeFormat = patchIntl(Intl.DateTimeFormat);
-Intl.NumberFormat = patchIntl(Intl.NumberFormat);
-
-// === Media Devices ===
-if (navigator.mediaDevices) {{
+// === Media Devices (CDP cannot spoof) ===
+if (navigator.mediaDevices?.enumerateDevices) {{
     const fakeDevices = C.media.devices.map(d => ({{
         deviceId: d.deviceId,
         kind: d.kind,
         label: d.label,
         groupId: d.groupId,
-        toJSON() {{ return {{ deviceId: this.deviceId, kind: this.kind, label: this.label, groupId: this.groupId }}; }}
+        toJSON() {{
+            return {{
+                deviceId: this.deviceId,
+                kind: this.kind,
+                label: this.label,
+                groupId: this.groupId
+            }};
+        }}
     }}));
 
-    const origEnum = navigator.mediaDevices.enumerateDevices;
-    navigator.mediaDevices.enumerateDevices = wrapFn(origEnum, async function() {{
+    const orig = navigator.mediaDevices.enumerateDevices;
+    navigator.mediaDevices.enumerateDevices = wrapFn(orig, async function() {{
         return fakeDevices;
     }});
 }}
 
-// === Canvas noise (subtle, per-session) ===
-const canvasSeed = Math.random();
-const addNoise = (data, noise) => {{
-    for (let i = 0; i < data.length; i += 4) {{
-        const n = ((canvasSeed * (i + 1) * 9999) % 1 - 0.5) * noise * 255;
-        data[i] = Math.max(0, Math.min(255, data[i] + n | 0));
-    }}
-}};
+// === Canvas noise (subtle, deterministic per-session) ===
+if (C.noise.canvas > 0) {{
+    const seed = Math.random();
 
-const origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
-CanvasRenderingContext2D.prototype.getImageData = wrapFn(origGetImageData, function(...args) {{
-    const data = origGetImageData.apply(this, args);
-    if (C.noise.canvas > 0) addNoise(data.data, C.noise.canvas);
-    return data;
-}});
+    const addNoise = (data, noise) => {{
+        for (let i = 0; i < data.length; i += 4) {{
+            // Deterministic noise based on position and seed
+            const n = ((seed * (i + 1) * 9999) % 1 - 0.5) * noise * 255;
+            data[i] = Math.max(0, Math.min(255, data[i] + n | 0));
+        }}
+    }};
 
-const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
-HTMLCanvasElement.prototype.toDataURL = wrapFn(origToDataURL, function(...args) {{
-    if (C.noise.canvas > 0) {{
+    const origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+    CanvasRenderingContext2D.prototype.getImageData = wrapFn(origGetImageData, function(...args) {{
+        const result = origGetImageData.apply(this, args);
+        addNoise(result.data, C.noise.canvas);
+        return result;
+    }});
+
+    const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = wrapFn(origToDataURL, function(...args) {{
         const ctx = this.getContext('2d');
         if (ctx) {{
-            const img = ctx.getImageData(0, 0, this.width || 1, this.height || 1);
-            addNoise(img.data, C.noise.canvas);
-            ctx.putImageData(img, 0, 0);
+            try {{
+                const img = ctx.getImageData(0, 0, this.width || 1, this.height || 1);
+                addNoise(img.data, C.noise.canvas);
+                ctx.putImageData(img, 0, 0);
+            }} catch (e) {{}}
         }}
-    }}
-    return origToDataURL.apply(this, args);
-}});
-
-// === Audio context noise ===
-if (typeof AudioContext !== 'undefined' || typeof webkitAudioContext !== 'undefined') {{
-    const AC = typeof AudioContext !== 'undefined' ? AudioContext : webkitAudioContext;
-    const origCreateOsc = AC.prototype.createOscillator;
-    AC.prototype.createOscillator = wrapFn(origCreateOsc, function() {{
-        const osc = origCreateOsc.call(this);
-        const origConnect = osc.connect.bind(osc);
-        osc.connect = wrapFn(osc.connect, function(dest, ...args) {{
-            if (C.noise.audio > 0 && dest instanceof AnalyserNode) {{
-                // Add minimal noise to audio fingerprint
-                const gain = this.context.createGain();
-                gain.gain.value = 1 + (Math.random() - 0.5) * C.noise.audio;
-                origConnect(gain);
-                gain.connect(dest);
-                return dest;
-            }}
-            return origConnect(dest, ...args);
-        }});
-        return osc;
+        return origToDataURL.apply(this, args);
     }});
 }}
 
-// === WebRTC IP masking ===
-if (typeof RTCPeerConnection !== 'undefined') {{
-    const OrigRTC = RTCPeerConnection;
-    window.RTCPeerConnection = wrapFn(OrigRTC, function(config, ...args) {{
-        // Force relay-only ICE (hides local IP)
-        config = config || {{}};
-        config.iceTransportPolicy = 'relay';
-        return new OrigRTC(config, ...args);
+// === Battery API (realistic desktop values) ===
+if (navigator.getBattery) {{
+    const battery = {{
+        charging: true,
+        chargingTime: 0,
+        dischargingTime: Infinity,
+        level: 1.0,
+        onchargingchange: null,
+        onchargingtimechange: null,
+        ondischargingtimechange: null,
+        onlevelchange: null,
+        addEventListener: function() {{}},
+        removeEventListener: function() {{}},
+        dispatchEvent: function() {{ return true; }}
+    }};
+
+    const orig = navigator.getBattery;
+    navigator.getBattery = wrapFn(orig, function() {{
+        return Promise.resolve(battery);
     }});
-    window.RTCPeerConnection.prototype = OrigRTC.prototype;
 }}
 
-// === Clean up automation traces ===
-const deleteProps = [
+// === Network Information API ===
+(function() {{
+    const connection = {{
+        effectiveType: '4g',
+        rtt: 100,
+        downlink: 1.35,
+        saveData: false,
+        type: 'wifi',
+        onchange: null,
+        addEventListener: function() {{}},
+        removeEventListener: function() {{}},
+        dispatchEvent: function() {{ return true; }}
+    }};
+
+    defineProperty(Navigator.prototype, 'connection', {{
+        get: function() {{ return connection; }},
+        enumerable: true,
+        configurable: true
+    }});
+}})();
+
+// === Permissions API (realistic responses) ===
+if (navigator.permissions?.query) {{
+    const orig = navigator.permissions.query;
+    navigator.permissions.query = wrapFn(orig, function(desc) {{
+        // Return 'prompt' for notifications (realistic default)
+        if (desc.name === 'notifications') {{
+            return Promise.resolve({{ state: 'prompt', onchange: null }});
+        }}
+        return orig.call(this, desc);
+    }});
+}}
+
+// === Clean automation traces ===
+const automationProps = [
     'cdc_adoQpoasnfa76pfcZLmcfl_Array',
     'cdc_adoQpoasnfa76pfcZLmcfl_Promise',
     'cdc_adoQpoasnfa76pfcZLmcfl_Symbol',
@@ -278,19 +455,23 @@ const deleteProps = [
     '__fxdriver_unwrapped',
     '$chrome_asyncScriptInfo',
     '$cdc_asdjflasutopfhvcZLmcfl_',
+    '__nightmare',
+    '_phantom',
+    '_selenium',
+    'callPhantom',
+    'domAutomation',
+    'domAutomationController'
 ];
-deleteProps.forEach(p => {{ try {{ delete window[p]; }} catch {{}} }});
 
-// Prevent detection via Error stack
-const origError = Error;
-window.Error = function(...args) {{
-    const err = new origError(...args);
-    if (err.stack) {{
-        err.stack = err.stack.replace(/\\n.*?(puppeteer|playwright|selenium|webdriver|automation).*?\\n/gi, '\\n');
+automationProps.forEach(p => {{
+    try {{ delete window[p]; }} catch {{}}
+}});
+
+try {{
+    if (document.$cdc_asdjflasutopfhvcZLmcfl_) {{
+        delete document.$cdc_asdjflasutopfhvcZLmcfl_;
     }}
-    return err;
-}};
-window.Error.prototype = origError.prototype;
+}} catch (e) {{}}
 
 }})();"""
 
@@ -299,28 +480,31 @@ async def apply_stealth(browser: "uc.Browser", profile: "FingerprintProfile") ->
     """
     Register stealth script for all pages in this browser.
 
-    Call once at browser start. Each page navigation will need
-    apply_stealth_to_page() call as CDP registration is unreliable.
+    NOTE: This is a fallback. Primary stealth is applied via CDP in browser.py
     """
     tabs = browser.tabs
     if not tabs:
+        logger.warning("No tabs available for stealth injection")
         return
 
     script = build_stealth_script(profile)
 
-    # Register for future documents (may not trigger reliably)
     try:
         await tabs[0].send(cdp.page.add_script_to_evaluate_on_new_document(source=script))
-    except Exception:
-        pass
+    except (ConnectionError, TimeoutError) as e:
+        logger.debug(f"CDP script registration skipped: {e}")
+    except RuntimeError as e:
+        logger.debug(f"CDP script registration failed: {e}")
 
-    # Apply to initial tab
-    await tabs[0].evaluate(script)
-    logger.info(f"Stealth initialized: {profile.name}")
+    try:
+        await tabs[0].evaluate(script)
+        logger.info(f"Stealth initialized: {profile.name}")
+    except (ConnectionError, TimeoutError) as e:
+        logger.warning(f"Stealth injection failed: {e}")
 
 
 async def apply_stealth_to_page(page: "uc.Tab", profile: "FingerprintProfile") -> None:
-    """Inject stealth script into page context."""
+    """Inject stealth script into page context (fallback method)."""
     script = build_stealth_script(profile)
     try:
         await page.evaluate(script)

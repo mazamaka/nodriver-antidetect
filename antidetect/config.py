@@ -2,18 +2,119 @@
 
 from __future__ import annotations
 
-import os
-import random
+import re
+import subprocess
+from datetime import datetime
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
+from loguru import logger
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
 
+# === Chrome Version Detection ===
+
+@lru_cache(maxsize=1)
+def get_chrome_version() -> str:
+    """
+    Detect installed Chrome version.
+
+    Returns version string like "132.0.6834.83" or default if not found.
+    """
+    # Default fallback version
+    default_version = "132.0.6834.83"
+
+    # Try common Chrome paths
+    chrome_paths = [
+        "google-chrome",
+        "google-chrome-stable",
+        "chromium",
+        "chromium-browser",
+        "/usr/bin/google-chrome",
+        "/usr/bin/chromium",
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    ]
+
+    for chrome_path in chrome_paths:
+        try:
+            result = subprocess.run(
+                [chrome_path, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                # Parse version from "Google Chrome 132.0.6834.83" or similar
+                match = re.search(r"(\d+\.\d+\.\d+\.\d+)", result.stdout)
+                if match:
+                    version = match.group(1)
+                    logger.debug(f"Detected Chrome version: {version}")
+                    return version
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            continue
+
+    logger.debug(f"Chrome not found, using default version: {default_version}")
+    return default_version
+
+
+def build_user_agent(platform: str, chrome_version: str | None = None) -> str:
+    """Build User-Agent string for given platform and Chrome version."""
+    version = chrome_version or get_chrome_version()
+
+    # Platform-specific UA templates
+    templates = {
+        "Linux x86_64": f"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36",
+        "Win32": f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36",
+        "MacIntel": f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36",
+    }
+
+    return templates.get(platform, templates["Linux x86_64"])
+
+
+def build_app_version(platform: str, chrome_version: str | None = None) -> str:
+    """Build appVersion string for given platform."""
+    version = chrome_version or get_chrome_version()
+
+    templates = {
+        "Linux x86_64": f"5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36",
+        "Win32": f"5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36",
+        "MacIntel": f"5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36",
+    }
+
+    return templates.get(platform, templates["Linux x86_64"])
+
+
+# === Timezone Utilities ===
+
+def get_timezone_offset(timezone: str) -> int:
+    """
+    Get timezone offset in minutes from UTC using zoneinfo.
+
+    Args:
+        timezone: IANA timezone name (e.g., "Europe/Budapest")
+
+    Returns:
+        Offset in minutes (negative for east of UTC, positive for west)
+    """
+    try:
+        tz = ZoneInfo(timezone)
+        now = datetime.now(tz)
+        offset_seconds = now.utcoffset().total_seconds()
+        # JavaScript getTimezoneOffset() returns positive for west, negative for east
+        return -int(offset_seconds / 60)
+    except (KeyError, AttributeError):
+        logger.warning(f"Unknown timezone: {timezone}, using UTC")
+        return 0
+
+
+# === Pydantic Models ===
+
 class WebGLConfig(BaseModel):
     """WebGL fingerprint configuration."""
 
-    # Default: RTX 3060 (mazamaka local)
     vendor: str = "Google Inc. (NVIDIA Corporation)"
     renderer: str = "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)"
     unmasked_vendor: str = "Google Inc. (NVIDIA Corporation)"
@@ -23,11 +124,10 @@ class WebGLConfig(BaseModel):
 class ScreenConfig(BaseModel):
     """Screen configuration."""
 
-    # Default: 3440x1440 ultrawide (mazamaka local)
-    width: int = 3440
-    height: int = 1440
-    avail_width: int = 3374
-    avail_height: int = 1408
+    width: int = 1920
+    height: int = 1080
+    avail_width: int = 1920
+    avail_height: int = 1040  # Height minus taskbar
     color_depth: int = 24
     pixel_depth: int = 24
     device_pixel_ratio: float = 1.0
@@ -37,11 +137,11 @@ class NavigatorConfig(BaseModel):
     """Navigator properties configuration."""
 
     platform: str = "Linux x86_64"
-    app_version: str = "5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
-    user_agent: str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+    app_version: str = Field(default_factory=lambda: build_app_version("Linux x86_64"))
+    user_agent: str = Field(default_factory=lambda: build_user_agent("Linux x86_64"))
     vendor: str = "Google Inc."
-    languages: list[str] = Field(default_factory=lambda: ["ru", "en-US", "en", "uk"])
-    hardware_concurrency: int = 12
+    languages: list[str] = Field(default_factory=lambda: ["en-US", "en"])
+    hardware_concurrency: int = 8
     device_memory: int = 8
     max_touch_points: int = 0
     do_not_track: str | None = None
@@ -51,7 +151,6 @@ class NavigatorConfig(BaseModel):
 class MediaDevicesConfig(BaseModel):
     """Media devices configuration for camera/microphone spoofing."""
 
-    # Default: 3 devices (mazamaka local: mic, audio, webcam)
     has_audio_input: bool = True
     has_audio_output: bool = True
     has_video_input: bool = True
@@ -63,10 +162,9 @@ class MediaDevicesConfig(BaseModel):
 class TimezoneConfig(BaseModel):
     """Timezone configuration."""
 
-    # Default: Europe/Budapest (mazamaka local)
-    timezone: str = "Europe/Budapest"
-    locale: str = "ru"
-    offset: int = -60  # Minutes from UTC
+    timezone: str = "UTC"
+    locale: str = "en-US"
+    offset: int = 0  # Minutes from UTC (calculated automatically)
 
 
 class FingerprintProfile(BaseModel):
@@ -79,51 +177,51 @@ class FingerprintProfile(BaseModel):
     media_devices: MediaDevicesConfig = Field(default_factory=MediaDevicesConfig)
     timezone: TimezoneConfig = Field(default_factory=TimezoneConfig)
 
-    # Canvas noise
-    canvas_noise: float = 0.0001  # Small noise to randomize canvas fingerprint
+    # Canvas noise (small value to randomize canvas fingerprint)
+    canvas_noise: float = 0.00001
 
     # Audio context noise
-    audio_noise: float = 0.0001
+    audio_noise: float = 0.00001
 
-    # WebRTC
+    # WebRTC settings
     webrtc_enabled: bool = True
-    webrtc_local_ips_hidden: bool = True  # Hide local IPs
+    webrtc_local_ips_hidden: bool = True
 
+
+# === Main Configuration ===
 
 class AntidetectConfig(BaseSettings):
     """Main antidetect configuration from environment variables."""
 
-    # Profile path - load from JSON file (takes priority over other settings)
-    profile_path: str = Field(default="", alias="AD_PROFILE_PATH")
+    # Profile path - load from JSON file (takes priority)
+    profile_path: str = Field(default="profiles/mazamaka_local.json", alias="AD_PROFILE_PATH")
 
-    # Timezone (default: mazamaka local)
+    # Timezone
     timezone: str = Field(default="Europe/Budapest", alias="AD_TIMEZONE")
     locale: str = Field(default="ru", alias="AD_LOCALE")
 
-    # Screen (default: 3440x1440 ultrawide)
-    screen_width: int = Field(default=3440, alias="AD_SCREEN_WIDTH")
-    screen_height: int = Field(default=1440, alias="AD_SCREEN_HEIGHT")
+    # Screen
+    screen_width: int = Field(default=1920, alias="AD_SCREEN_WIDTH")
+    screen_height: int = Field(default=1080, alias="AD_SCREEN_HEIGHT")
 
-    # Hardware (default: mazamaka local - 12 cores, 8GB RAM)
+    # Hardware
     device_memory: int = Field(default=8, alias="AD_DEVICE_MEMORY")
-    hardware_concurrency: int = Field(default=12, alias="AD_HARDWARE_CONCURRENCY")
+    hardware_concurrency: int = Field(default=8, alias="AD_HARDWARE_CONCURRENCY")
     platform: str = Field(default="Linux x86_64", alias="AD_PLATFORM")
 
-    # WebGL (default: RTX 3060)
+    # WebGL
     webgl_vendor: str = Field(
-        default="Google Inc. (NVIDIA Corporation)", alias="AD_WEBGL_VENDOR"
+        default="Google Inc. (NVIDIA Corporation)",
+        alias="AD_WEBGL_VENDOR",
     )
     webgl_renderer: str = Field(
         default="ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)",
         alias="AD_WEBGL_RENDERER",
     )
 
-    # User Agent (default: Chrome 144)
-    user_agent: str = Field(
-        default="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-        alias="AD_USER_AGENT"
-    )
-    languages: str = Field(default="ru,en-US,en,uk", alias="AD_LANGUAGES")
+    # User Agent (auto-detected if empty)
+    user_agent: str = Field(default="", alias="AD_USER_AGENT")
+    languages: str = Field(default="en-US,en", alias="AD_LANGUAGES")
 
     # Proxy
     proxy_url: str = Field(default="", alias="PROXY_URL")
@@ -136,21 +234,33 @@ class AntidetectConfig(BaseSettings):
         extra = "ignore"
 
     def to_profile(self) -> FingerprintProfile:
-        """Convert config to fingerprint profile.
-
-        If AD_PROFILE_PATH is set, loads profile from JSON file.
-        Otherwise, creates profile from environment variables.
         """
-        # Priority 1: Load from JSON file if specified
+        Convert config to fingerprint profile.
+
+        Priority:
+        1. AD_PROFILE_PATH (JSON file)
+        2. Environment variables
+        """
+        # Try to load from JSON file
         if self.profile_path:
-            from .profiles import load_profile_from_json
-            return load_profile_from_json(self.profile_path)
+            profile_path = Path(self.profile_path)
+            if not profile_path.is_absolute():
+                # Try relative to current dir, then to package
+                if not profile_path.exists():
+                    package_dir = Path(__file__).parent.parent
+                    profile_path = package_dir / self.profile_path
 
-        # Priority 2: Create from environment variables
+            if profile_path.exists():
+                from .profiles import load_profile_from_json
+                return load_profile_from_json(profile_path)
+
+        # Build from environment variables
         languages = [lang.strip() for lang in self.languages.split(",")]
+        offset = get_timezone_offset(self.timezone)
 
-        # Calculate timezone offset based on timezone
-        offset = self._get_timezone_offset(self.timezone)
+        # Auto-detect Chrome version for UA if not specified
+        user_agent = self.user_agent or build_user_agent(self.platform)
+        app_version = build_app_version(self.platform)
 
         return FingerprintProfile(
             name="env_config",
@@ -168,7 +278,8 @@ class AntidetectConfig(BaseSettings):
             ),
             navigator=NavigatorConfig(
                 platform=self.platform,
-                user_agent=self.user_agent,
+                user_agent=user_agent,
+                app_version=app_version,
                 languages=languages,
                 hardware_concurrency=self.hardware_concurrency,
                 device_memory=self.device_memory,
@@ -180,117 +291,34 @@ class AntidetectConfig(BaseSettings):
             ),
         )
 
-    @staticmethod
-    def _get_timezone_offset(timezone: str) -> int:
-        """Get timezone offset in minutes from UTC."""
-        # Common timezone offsets
-        offsets = {
-            "UTC": 0,
-            "Europe/London": 0,
-            "Europe/Berlin": -60,
-            "Europe/Paris": -60,
-            "Europe/Moscow": -180,
-            "Europe/Budapest": -60,
-            "America/New_York": 300,
-            "America/Los_Angeles": 480,
-            "Asia/Tokyo": -540,
-            "Asia/Shanghai": -480,
-            "Australia/Sydney": -660,
-        }
-        return offsets.get(timezone, 0)
 
-
-# Predefined profiles for different scenarios
-PROFILES: dict[str, FingerprintProfile] = {
-    # Default profile - mazamaka local (target: like_headless <= 31%)
-    "default": FingerprintProfile(
-        name="mazamaka_local",
-        navigator=NavigatorConfig(
-            platform="Linux x86_64",
-            app_version="5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-            hardware_concurrency=12,
-            device_memory=8,
-            languages=["ru", "en-US", "en", "uk"],
-        ),
-        screen=ScreenConfig(
-            width=3440, height=1440,
-            avail_width=3374, avail_height=1408,
-        ),
-        webgl=WebGLConfig(
-            vendor="Google Inc. (NVIDIA Corporation)",
-            renderer="ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)",
-            unmasked_vendor="Google Inc. (NVIDIA Corporation)",
-            unmasked_renderer="ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)",
-        ),
-        timezone=TimezoneConfig(
-            timezone="Europe/Budapest",
-            locale="ru",
-            offset=-60,
-        ),
-        media_devices=MediaDevicesConfig(
-            audio_inputs=1,
-            audio_outputs=1,
-            video_inputs=1,
-        ),
-    ),
-    "windows_chrome": FingerprintProfile(
-        name="windows_chrome",
-        navigator=NavigatorConfig(
-            platform="Win32",
-            app_version="5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-            hardware_concurrency=8,
-            device_memory=8,
-        ),
-        screen=ScreenConfig(width=1920, height=1080, avail_width=1920, avail_height=1040),
-        webgl=WebGLConfig(
-            vendor="Google Inc. (NVIDIA)",
-            renderer="ANGLE (NVIDIA, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5)",
-        ),
-    ),
-    "macos_chrome": FingerprintProfile(
-        name="macos_chrome",
-        navigator=NavigatorConfig(
-            platform="MacIntel",
-            app_version="5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-            hardware_concurrency=10,
-            device_memory=8,
-        ),
-        screen=ScreenConfig(
-            width=2560, height=1440, device_pixel_ratio=2.0
-        ),
-        webgl=WebGLConfig(
-            vendor="Google Inc. (Apple)",
-            renderer="ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Version 14.0)",
-        ),
-    ),
-    "linux_chrome": FingerprintProfile(
-        name="linux_chrome",
-        navigator=NavigatorConfig(
-            platform="Linux x86_64",
-            app_version="5.0 (X11; Linux x86_64) AppleWebKit/537.36",
-            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-            hardware_concurrency=12,
-            device_memory=16,
-        ),
-        screen=ScreenConfig(width=1920, height=1080),
-        webgl=WebGLConfig(
-            vendor="Google Inc. (NVIDIA)",
-            renderer="ANGLE (NVIDIA, NVIDIA GeForce GTX 1080 Ti/PCIe/SSE2, OpenGL 4.5)",
-        ),
-    ),
-}
-
+# === Profile Loading Helpers ===
 
 def get_profile(name: str) -> FingerprintProfile:
-    """Get predefined profile by name."""
-    if name not in PROFILES:
-        raise ValueError(f"Unknown profile: {name}. Available: {list(PROFILES.keys())}")
-    return PROFILES[name].model_copy(deep=True)
+    """
+    Get profile by name from JSON files in profiles/ directory.
+
+    Args:
+        name: Profile name (without .json extension)
+
+    Returns:
+        FingerprintProfile loaded from JSON
+    """
+    from .profiles import load_profile_from_json, PROFILES_DIR
+
+    profile_path = PROFILES_DIR / f"{name}.json"
+    if not profile_path.exists():
+        available = [p.stem for p in PROFILES_DIR.glob("*.json")]
+        raise ValueError(f"Unknown profile: {name}. Available: {available}")
+
+    return load_profile_from_json(profile_path)
 
 
-def get_random_profile() -> FingerprintProfile:
-    """Get random predefined profile."""
-    return random.choice(list(PROFILES.values())).model_copy(deep=True)
+def list_available_profiles() -> list[str]:
+    """List all available profile names from profiles/ directory."""
+    from .profiles import PROFILES_DIR
+
+    if not PROFILES_DIR.exists():
+        return []
+
+    return sorted(p.stem for p in PROFILES_DIR.glob("*.json"))

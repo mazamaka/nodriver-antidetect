@@ -9,7 +9,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from antidetect import AntidetectBrowser, FingerprintProfile, get_random_profile
+from antidetect import AntidetectBrowser, FingerprintProfile, get_profile, list_available_profiles
+from antidetect.config import NavigatorConfig, ScreenConfig, TimezoneConfig
 from loguru import logger
 
 
@@ -25,7 +26,7 @@ async def basic_example() -> None:
 async def custom_profile_example() -> None:
     """Usage with custom fingerprint profile."""
 
-    # Create custom profile
+    # Create custom profile programmatically
     profile = FingerprintProfile(
         name="custom",
         navigator=NavigatorConfig(
@@ -52,15 +53,19 @@ async def custom_profile_example() -> None:
         logger.info("Custom profile example completed!")
 
 
-async def predefined_profile_example() -> None:
-    """Usage with predefined profile."""
+async def json_profile_example() -> None:
+    """Usage with JSON profile from profiles/ directory."""
 
-    # Use Windows Chrome profile
+    # List available profiles
+    profiles = list_available_profiles()
+    logger.info(f"Available profiles: {profiles}")
+
+    # Load and use a profile by name
     async with AntidetectBrowser(profile="windows_chrome") as browser:
         page = await browser.get("https://bot.sannysoft.com/")
         await asyncio.sleep(5)
         await browser.screenshot("/output/windows_chrome.png")
-        logger.info("Predefined profile example completed!")
+        logger.info("JSON profile example completed!")
 
 
 async def proxy_example() -> None:
@@ -83,12 +88,10 @@ async def main() -> None:
     os.makedirs("/output", exist_ok=True)
 
     await basic_example()
-    # await custom_profile_example()  # Needs imports
-    await predefined_profile_example()
+    await custom_profile_example()
+    await json_profile_example()
     await proxy_example()
 
 
 if __name__ == "__main__":
-    from antidetect.config import NavigatorConfig, ScreenConfig, TimezoneConfig
-
     asyncio.run(main())
