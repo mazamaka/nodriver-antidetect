@@ -58,8 +58,13 @@ configure_timezone() {
 configure_locale() {
     if [ -n "$AD_LOCALE" ]; then
         log_info "Setting locale to: $AD_LOCALE"
-        export LANG="$AD_LOCALE"
-        export LC_ALL="$AD_LOCALE"
+        # Use proper locale format
+        if [[ "$AD_LOCALE" == *".UTF-8" ]]; then
+            export LANG="$AD_LOCALE"
+        else
+            export LANG="${AD_LOCALE}.UTF-8" 2>/dev/null || export LANG="en_US.UTF-8"
+        fi
+        export LC_ALL="$LANG" 2>/dev/null || true
     fi
 }
 

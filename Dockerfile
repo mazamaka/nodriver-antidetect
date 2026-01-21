@@ -115,6 +115,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy antidetect module
 COPY antidetect/ ./antidetect/
 
+# Copy examples
+COPY examples/ ./examples/
+
 # Copy entrypoint and utilities
 COPY entrypoint.sh /entrypoint.sh
 COPY scripts/ ./scripts/
