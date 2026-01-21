@@ -40,6 +40,10 @@ htmlcov/
 
 # Output
 output/
+
+# Browser sessions (contains cookies, localStorage, cache)
+sessions/
+
 *.png
 *.jpg
 *.jpeg
