@@ -23,7 +23,7 @@ from .chrome_args import ChromeArgsBuilder
 from .session import SessionManager, SessionMetadata
 from .stealth import apply_stealth, apply_stealth_to_page, build_stealth_script
 
-__version__ = "2.5.0"
+__version__ = "2.5.1"
 __all__ = [
     # Browser
     "AntidetectBrowser",

@@ -21,6 +21,9 @@ from ..config import (
     ScreenConfig,
     TimezoneConfig,
     WebGLConfig,
+    build_app_version,
+    build_user_agent,
+    get_chrome_version,
 )
 
 # Browser chrome height for avail_height calculation
@@ -140,10 +143,21 @@ def _parse_profile(data: dict[str, Any], name: str) -> FingerprintProfile:
     if isinstance(languages, str):
         languages = [lang.strip() for lang in languages.split(",")]
 
+    # Get platform from profile
+    platform = _get(nav, "platform", default=nav_def.platform)
+
+    # DYNAMIC UA: Always generate UA from real Chrome version
+    # This ensures UA matches the actual installed browser
+    chrome_version = get_chrome_version()
+    user_agent = build_user_agent(platform, chrome_version)
+    app_version = build_app_version(platform, chrome_version)
+
+    logger.debug(f"Dynamic UA generated: Chrome/{chrome_version} for {platform}")
+
     navigator = NavigatorConfig(
-        platform=_get(nav, "platform", default=nav_def.platform),
-        app_version=_get(nav, "app_version", "appVersion", default=nav_def.app_version),
-        user_agent=_get(nav, "user_agent", "userAgent", default=nav_def.user_agent),
+        platform=platform,
+        app_version=app_version,
+        user_agent=user_agent,
         vendor=_get(nav, "vendor", default=nav_def.vendor),
         languages=languages,
         hardware_concurrency=_get(nav, "hardware_concurrency", "hardwareConcurrency", default=nav_def.hardware_concurrency),
