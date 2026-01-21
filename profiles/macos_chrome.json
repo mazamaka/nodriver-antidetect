@@ -1,0 +1,54 @@
+{
+  "name": "macos_chrome",
+  "description": "macOS Chrome profile - Apple M1 Pro",
+
+  "webgl": {
+    "vendor": "Google Inc. (Apple)",
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Version 14.0)",
+    "unmasked_vendor": "Google Inc. (Apple)",
+    "unmasked_renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Version 14.0)"
+  },
+
+  "screen": {
+    "width": 2560,
+    "height": 1440,
+    "avail_width": 2560,
+    "avail_height": 1415,
+    "color_depth": 30,
+    "pixel_depth": 30,
+    "device_pixel_ratio": 2.0
+  },
+
+  "navigator": {
+    "platform": "MacIntel",
+    "app_version": "5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+    "vendor": "Google Inc.",
+    "languages": ["en-US", "en"],
+    "hardware_concurrency": 10,
+    "device_memory": 8,
+    "max_touch_points": 0,
+    "do_not_track": null,
+    "webdriver": false
+  },
+
+  "media_devices": {
+    "has_audio_input": true,
+    "has_audio_output": true,
+    "has_video_input": true,
+    "audio_inputs": 1,
+    "audio_outputs": 1,
+    "video_inputs": 1
+  },
+
+  "timezone": {
+    "timezone": "America/Los_Angeles",
+    "locale": "en-US",
+    "offset": 480
+  },
+
+  "canvas_noise": 0.0001,
+  "audio_noise": 0.0001,
+  "webrtc_enabled": true,
+  "webrtc_local_ips_hidden": true
+}

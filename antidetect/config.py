@@ -93,6 +93,9 @@ class FingerprintProfile(BaseModel):
 class AntidetectConfig(BaseSettings):
     """Main antidetect configuration from environment variables."""
 
+    # Profile path - load from JSON file (takes priority over other settings)
+    profile_path: str = Field(default="", alias="AD_PROFILE_PATH")
+
     # Timezone (default: mazamaka local)
     timezone: str = Field(default="Europe/Budapest", alias="AD_TIMEZONE")
     locale: str = Field(default="ru", alias="AD_LOCALE")
@@ -133,7 +136,17 @@ class AntidetectConfig(BaseSettings):
         extra = "ignore"
 
     def to_profile(self) -> FingerprintProfile:
-        """Convert config to fingerprint profile."""
+        """Convert config to fingerprint profile.
+
+        If AD_PROFILE_PATH is set, loads profile from JSON file.
+        Otherwise, creates profile from environment variables.
+        """
+        # Priority 1: Load from JSON file if specified
+        if self.profile_path:
+            from .profiles import load_profile_from_json
+            return load_profile_from_json(self.profile_path)
+
+        # Priority 2: Create from environment variables
         languages = [lang.strip() for lang in self.languages.split(",")]
 
         # Calculate timezone offset based on timezone

@@ -1,0 +1,60 @@
+{
+  "name": "mazamaka_local",
+  "description": "Эталонный профиль на основе локального браузера mazamaka. Цель: like_headless <= 31%",
+
+  "webgl": {
+    "vendor": "Google Inc. (NVIDIA Corporation)",
+    "renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)",
+    "unmasked_vendor": "Google Inc. (NVIDIA Corporation)",
+    "unmasked_renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)"
+  },
+
+  "screen": {
+    "width": 3440,
+    "height": 1440,
+    "avail_width": 3374,
+    "avail_height": 1408,
+    "color_depth": 24,
+    "pixel_depth": 24,
+    "device_pixel_ratio": 1.0
+  },
+
+  "navigator": {
+    "platform": "Linux x86_64",
+    "app_version": "5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+    "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+    "vendor": "Google Inc.",
+    "languages": ["ru", "en-US", "en", "uk"],
+    "hardware_concurrency": 12,
+    "device_memory": 8,
+    "max_touch_points": 0,
+    "do_not_track": null,
+    "webdriver": false
+  },
+
+  "media_devices": {
+    "has_audio_input": true,
+    "has_audio_output": true,
+    "has_video_input": true,
+    "audio_inputs": 1,
+    "audio_outputs": 1,
+    "video_inputs": 1
+  },
+
+  "timezone": {
+    "timezone": "Europe/Budapest",
+    "locale": "ru",
+    "offset": -60
+  },
+
+  "canvas_noise": 0.00001,
+  "audio_noise": 0.00001,
+  "webrtc_enabled": true,
+  "webrtc_local_ips_hidden": true,
+
+  "target_metrics": {
+    "like_headless": 31,
+    "headless": 0,
+    "stealth": 0
+  }
+}

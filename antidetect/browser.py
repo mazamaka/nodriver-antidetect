@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 import nodriver as uc
 from loguru import logger
 
 from .config import AntidetectConfig, FingerprintProfile, get_profile
+from .profiles import load_profile_from_json
 from .spoofing import apply_fingerprint_spoofing, generate_fingerprint
 
 
@@ -36,7 +38,11 @@ class AntidetectBrowser:
         Initialize antidetect browser.
 
         Args:
-            profile: Fingerprint profile (FingerprintProfile, profile name, or None for random)
+            profile: Fingerprint profile. Can be:
+                - FingerprintProfile object
+                - str: predefined profile name ("default", "windows_chrome", etc.)
+                - str: path to JSON file (ends with .json)
+                - None: uses AD_PROFILE_PATH env var or creates from env vars
             config: AntidetectConfig from environment variables
             proxy: Proxy URL (socks5://user:pass@host:port)
             headless: Run in headless mode (not recommended for antidetect)
@@ -46,9 +52,15 @@ class AntidetectBrowser:
 
         # Resolve profile
         if profile is None:
+            # Use config (which checks AD_PROFILE_PATH first)
             self.profile = self.config.to_profile()
         elif isinstance(profile, str):
-            self.profile = get_profile(profile)
+            # Check if it's a path to JSON file
+            if profile.endswith(".json") or Path(profile).exists():
+                self.profile = load_profile_from_json(profile)
+            else:
+                # Try as predefined profile name
+                self.profile = get_profile(profile)
         else:
             self.profile = profile
 

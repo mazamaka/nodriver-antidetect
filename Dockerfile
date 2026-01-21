@@ -38,6 +38,10 @@ ENV AD_WEBGL_RENDERER="ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/S
 ENV AD_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
 ENV AD_LANGUAGES="ru,en-US,en,uk"
 
+# Profile settings - load fingerprint from JSON file
+# Set AD_PROFILE_PATH to use custom JSON profile (e.g., /profiles/custom.json)
+ENV AD_PROFILE_PATH=""
+
 # Proxy settings
 ENV PROXY_URL=""
 
@@ -115,6 +119,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy antidetect module
 COPY antidetect/ ./antidetect/
+
+# Copy JSON fingerprint profiles
+COPY profiles/ ./profiles/
 
 # Copy examples
 COPY examples/ ./examples/
