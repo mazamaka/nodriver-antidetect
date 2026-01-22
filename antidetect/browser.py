@@ -38,7 +38,8 @@ class AntidetectBrowser:
             - None to use default profile from config
         config: AntidetectConfig with environment overrides
         proxy: Proxy URL (http://user:pass@host:port)
-        headless: Run in headless mode
+        headless: Run in headless mode (DETECTABLE! Use hide_window instead)
+        hide_window: Move window off-screen (NOT headless, preserves fingerprint)
         browser_args: Additional Chrome arguments
         sandbox: Use sandbox (set False for Docker)
         session: Session name for cookie persistence
@@ -51,6 +52,7 @@ class AntidetectBrowser:
         config: AntidetectConfig | None = None,
         proxy: str | None = None,
         headless: bool = False,
+        hide_window: bool = False,
         browser_args: list[str] | None = None,
         sandbox: bool = True,
         session: str | None = None,
@@ -60,6 +62,7 @@ class AntidetectBrowser:
         self.profile = self._resolve_profile(profile)
         self.proxy = proxy or self.config.proxy_url or None
         self.headless = headless or self.config.headless
+        self.hide_window = hide_window or self.config.hide_window
         self.browser_args = browser_args or []
         self.sandbox = sandbox
 
@@ -67,7 +70,7 @@ class AntidetectBrowser:
 
         # CDP and Chrome args handlers
         self._cdp_handler = CDPOverridesHandler(self.profile)
-        self._args_builder = ChromeArgsBuilder(self.profile, sandbox)
+        self._args_builder = ChromeArgsBuilder(self.profile, sandbox, hide_window)
 
         # Session management
         self._session_name = session

@@ -25,15 +25,18 @@ class ChromeArgsBuilder:
         self,
         profile: "FingerprintProfile",
         sandbox: bool = True,
+        hide_window: bool = False,
     ) -> None:
         """Initialize builder.
 
         Args:
             profile: FingerprintProfile for language/screen settings
             sandbox: Use sandbox (set False for Docker/rootless)
+            hide_window: Move window off-screen (NOT headless, preserves fingerprint)
         """
         self.profile = profile
         self.sandbox = sandbox
+        self.hide_window = hide_window
 
     def build(self, extra_args: list[str] | None = None) -> list[str]:
         """Build complete Chrome arguments list.
@@ -112,9 +115,13 @@ class ChromeArgsBuilder:
     def _window_args(self) -> list[str]:
         """Build window size arguments."""
         p = self.profile
-        return [
-            f"--window-size={p.screen.width},{p.screen.height}",
-        ]
+        args = [f"--window-size={p.screen.width},{p.screen.height}"]
+
+        # Hide window by moving off-screen (NOT headless - preserves fingerprint!)
+        if self.hide_window:
+            args.append("--window-position=-32000,-32000")
+
+        return args
 
     def _docker_args(self) -> list[str]:
         """Build Docker/rootless specific arguments."""
