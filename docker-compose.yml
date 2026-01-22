@@ -175,6 +175,57 @@ services:
         limits:
           memory: 4G
 
+  # noVNC mode - view browser through web interface http://localhost:6080
+  # Run: docker compose up antidetect-novnc
+  # Then open: http://localhost:6080/vnc.html (password: antidetect)
+  antidetect-novnc:
+    build:
+      context: .
+      dockerfile: Dockerfile.novnc
+    image: mazamaka/nodriver-antidetect:novnc
+    container_name: nodriver-antidetect-novnc
+    privileged: true
+    runtime: nvidia
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia-modeset:/dev/nvidia-modeset
+      - /dev/nvidia-uvm:/dev/nvidia-uvm
+      - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all,graphics,display,compute,utility
+      # Screen resolution (VNC desktop size)
+      - SCREEN_WIDTH=1920
+      - SCREEN_HEIGHT=1080
+      # VNC settings
+      - VNC_PASSWORD=antidetect
+      - VNC_PORT=5900
+      - NOVNC_PORT=6080
+      # Fingerprint settings
+      - AD_TIMEZONE=Europe/Budapest
+      - AD_LOCALE=ru
+      - AD_SCREEN_WIDTH=1920
+      - AD_SCREEN_HEIGHT=1080
+      - AD_DEVICE_MEMORY=8
+      - AD_HARDWARE_CONCURRENCY=12
+      - AD_PLATFORM=Linux x86_64
+      - AD_WEBGL_VENDOR=Google Inc. (NVIDIA Corporation)
+      - AD_WEBGL_RENDERER=ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)
+      - AD_LANGUAGES=ru,en-US,en,uk
+    ports:
+      - "6080:6080"   # noVNC web interface
+      - "5900:5900"   # VNC direct (optional)
+    volumes:
+      - ./output:/output
+      - ./examples:/app/examples:ro
+    command: ["python", "/app/examples/test_fingerprint_fast.py", "--output", "/output"]
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
   # Test service with different profile
   antidetect-windows:
     build: .

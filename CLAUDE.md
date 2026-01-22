@@ -263,6 +263,7 @@ antidetect-gpu:
 | `antidetect` (Xvfb) | llvmpipe (software) | LOW | 44% | Нет |
 | `antidetect-gpu` (X11 forwarding) | NVIDIA RTX 3060 | HIGH | 38% | ❌ Да |
 | `antidetect-xorg` (Xorg+NVIDIA) | **NVIDIA RTX 3060** | **HIGH** | **44%** | ✅ **Нет** |
+| `antidetect-novnc` (Xorg+VNC) | **NVIDIA RTX 3060** | **HIGH** | **44%** | ✅ **Веб** |
 | `antidetect-vgl` (VirtualGL) | llvmpipe (software) | LOW | 44% | Нет |
 | Локально (GUI) | NVIDIA RTX 3060 | HIGH | 31% | Да |
 
@@ -287,6 +288,26 @@ docker compose up antidetect-xorg
 - NVIDIA GPU
 - nvidia-container-toolkit
 - privileged mode (для Xorg)
+
+#### Веб-доступ к браузеру: antidetect-novnc
+
+Смотреть браузер через веб-интерфейс без X11 forwarding:
+
+```bash
+# Запуск
+docker compose up antidetect-novnc
+
+# Открыть в браузере
+http://localhost:6080/vnc.html
+# Пароль: antidetect
+```
+
+**Особенности:**
+- Реальный GPU (NVIDIA RTX 3060)
+- WebGL confidence: HIGH
+- Доступ через веб-браузер на порту 6080
+- VNC порт 5900 (опционально для VNC клиентов)
+- Не требует xhost или X11 forwarding
 
 #### VirtualGL НЕ работает с Chrome
 

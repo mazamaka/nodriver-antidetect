@@ -1,0 +1,113 @@
+# nodriver-antidetect with noVNC for web-based browser viewing
+# Access browser via http://localhost:6080
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
+LABEL maintainer="mazamaka"
+LABEL description="Antidetect browser with noVNC web access (GPU + headless)"
+
+# Build arguments
+ARG CHROME_VERSION=stable
+ARG TIMEZONE=Europe/Berlin
+ARG VNC_PASSWORD=antidetect
+
+# Environment
+ENV TZ=${TIMEZONE}
+ENV DISPLAY=:0
+ENV DEBIAN_FRONTEND=noninteractive
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=all
+
+# VNC settings
+ENV VNC_PASSWORD=${VNC_PASSWORD}
+ENV VNC_PORT=5900
+ENV NOVNC_PORT=6080
+ENV SCREEN_WIDTH=1920
+ENV SCREEN_HEIGHT=1080
+ENV SCREEN_DEPTH=24
+
+# Antidetect settings
+ENV AD_TIMEZONE="Europe/Budapest"
+ENV AD_LOCALE="ru"
+ENV AD_SCREEN_WIDTH=1920
+ENV AD_SCREEN_HEIGHT=1080
+
+# Install Python 3.12, Xorg, VNC, and dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common && \
+    add-apt-repository -y ppa:deadsnakes/ppa && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    # Python
+    python3.12 python3.12-venv python3.12-dev python3-pip \
+    # Basic tools
+    wget curl gnupg ca-certificates procps net-tools \
+    # Xorg server and utilities
+    xserver-xorg-core \
+    xserver-xorg-video-nvidia-535 \
+    xinit x11-xserver-utils x11-utils \
+    # VNC and noVNC
+    x11vnc \
+    novnc \
+    websockify \
+    # Simple window manager (lightweight)
+    openbox \
+    # Fonts
+    fonts-liberation fonts-noto fonts-dejavu-core fontconfig \
+    # Chrome dependencies
+    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
+    libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
+    libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2 \
+    libatspi2.0-0 libgtk-3-0 libxshmfence1 \
+    # OpenGL/EGL
+    libegl1 libgl1 libgles2 \
+    # Other
+    pulseaudio tzdata locales dbus \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set Python 3.12 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 && \
+    python3.12 -m ensurepip --upgrade && \
+    python3.12 -m pip install --upgrade pip
+
+# Configure locales
+RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
+    sed -i '/ru_RU.UTF-8/s/^# //g' /etc/locale.gen && \
+    locale-gen
+
+# Install Google Chrome
+RUN mkdir -p /etc/apt/keyrings && \
+    wget -q -O /etc/apt/keyrings/google-chrome.asc https://dl.google.com/linux/linux_signing_key.pub && \
+    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.asc] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
+    apt-get update && \
+    apt-get install -y google-chrome-${CHROME_VERSION} && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create Xorg config for headless NVIDIA
+RUN mkdir -p /etc/X11 && \
+    nvidia-xconfig --query-gpu-info > /dev/null 2>&1 || true
+
+# Create VNC password directory
+RUN mkdir -p /root/.vnc
+
+WORKDIR /app
+
+# Install Python dependencies
+# Force reinstall wrapt to fix Python 3.12 compatibility
+COPY requirements.txt .
+RUN python3.12 -m pip install --no-cache-dir --upgrade --force-reinstall wrapt && \
+    python3.12 -m pip install --no-cache-dir -r requirements.txt
+
+# Copy application
+COPY antidetect/ ./antidetect/
+COPY profiles/ ./profiles/
+COPY examples/ ./examples/
+
+# Copy entrypoint
+COPY entrypoint-novnc.sh /entrypoint-novnc.sh
+RUN chmod +x /entrypoint-novnc.sh
+
+# Expose ports
+EXPOSE 5900 6080
+
+ENTRYPOINT ["/entrypoint-novnc.sh"]
+CMD ["python", "-c", "print('noVNC ready at http://localhost:6080')"]
