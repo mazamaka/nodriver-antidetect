@@ -256,15 +256,25 @@ antidetect-gpu:
     - /tmp/.X11-unix:/tmp/.X11-unix:rw
 ```
 
-#### Результаты
+#### Результаты (CreepJS тесты 2026-01-22)
 
 | Режим | GPU | WebGL confidence | like_headless | Окно на хосте |
 |-------|-----|------------------|---------------|---------------|
-| `antidetect` (Xvfb) | llvmpipe (software) | LOW | ~44% | Нет |
-| `antidetect-gpu` (X11) | NVIDIA RTX 3060 | HIGH | ~31% | Да |
-| `antidetect-xorg` (Xorg+NVIDIA) | **NVIDIA RTX 3060** | **HIGH** | ~44% | **Нет** ✅ |
-| `antidetect-vgl` (VirtualGL) | llvmpipe (software) | LOW | ~44% | Нет |
-| Локально | NVIDIA RTX 3060 | HIGH | 31% | Да |
+| `antidetect` (Xvfb) | llvmpipe (software) | LOW | 44% | Нет |
+| `antidetect-gpu` (X11 forwarding) | NVIDIA RTX 3060 | HIGH | 38% | ❌ Да |
+| `antidetect-xorg` (Xorg+NVIDIA) | **NVIDIA RTX 3060** | **HIGH** | **44%** | ✅ **Нет** |
+| `antidetect-vgl` (VirtualGL) | llvmpipe (software) | LOW | 44% | Нет |
+| Локально (GUI) | NVIDIA RTX 3060 | HIGH | 31% | Да |
+
+**⚠️ КРИТИЧНО: НИКОГДА не используй AD_HEADLESS=true!**
+
+| Параметр | Результат | Почему опасно |
+|----------|-----------|---------------|
+| AD_HEADLESS=true | headless: 33%, screen: 800x600 | Сразу палится антифродом! |
+
+`AD_HEADLESS=true` включает реальный headless режим Chrome, который детектируется антифрод системами. Вместо этого используй Docker с виртуальным дисплеем:
+- **antidetect-xorg** — для headless GPU (рекомендуется для продакшена)
+- **antidetect** (Xvfb) — для headless без GPU
 
 #### Headless GPU: antidetect-xorg (рекомендуется)
 
@@ -292,6 +302,18 @@ docker compose up antidetect-xorg
 3. Xpra/TurboVNC с VirtualGL backend
 
 **⚠️ Важно**: Docker Desktop на Linux НЕ поддерживает GPU — работает только Native Docker Engine.
+
+**Переключение между Docker Desktop и Native Docker Engine:**
+```bash
+# Посмотреть доступные контексты
+docker context ls
+
+# Переключиться на Native Docker Engine (для GPU)
+docker context use default
+
+# Переключиться обратно на Docker Desktop
+docker context use desktop-linux
+```
 
 ---
 
