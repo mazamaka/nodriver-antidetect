@@ -453,7 +453,7 @@ async def test_pixelscan_fast(browser: AntidetectBrowser, output_dir: str) -> di
     """Fast pixelscan.net test."""
     logger.info("🔍 Testing Pixelscan...")
 
-    page = await browser.get("https://pixelscan.net/")
+    page = await browser.get("https://pixelscan.net/bot-check")
     await asyncio.sleep(5)  # Needs a bit more time
 
     # Try to get overall score
