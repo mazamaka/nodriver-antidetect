@@ -250,7 +250,6 @@ class AntidetectConfig(BaseSettings):
 
     # Browser behavior
     headless: bool = Field(default=False, alias="AD_HEADLESS")
-    hide_window: bool = Field(default=False, alias="AD_HIDE_WINDOW")
 
     class Config:
         env_prefix = ""
