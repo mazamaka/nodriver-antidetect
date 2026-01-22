@@ -1,0 +1,85 @@
+# nodriver-antidetect with VirtualGL for headless GPU rendering
+# Using NVIDIA CUDA base image for proper OpenGL/EGL support
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
+LABEL maintainer="mazamaka"
+LABEL description="Antidetect browser with VirtualGL GPU support"
+
+# Build arguments
+ARG CHROME_VERSION=stable
+ARG TIMEZONE=Europe/Berlin
+ARG VIRTUALGL_VERSION=3.1
+
+# Environment
+ENV TZ=${TIMEZONE}
+ENV DISPLAY=:99
+ENV VGL_DISPLAY=egl
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Antidetect settings
+ENV AD_TIMEZONE="Europe/Budapest"
+ENV AD_LOCALE="ru"
+ENV AD_SCREEN_WIDTH=1920
+ENV AD_SCREEN_HEIGHT=1080
+ENV AD_PROFILE_PATH="/app/profiles/mazamaka_local.json"
+
+# Install Python 3.12 and dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common && \
+    add-apt-repository -y ppa:deadsnakes/ppa && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    python3.12 python3.12-venv python3.12-dev python3-pip \
+    wget curl gnupg ca-certificates \
+    xvfb x11-utils x11-xserver-utils \
+    fonts-liberation fonts-noto fonts-dejavu-core fontconfig \
+    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
+    libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
+    libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2 \
+    libatspi2.0-0 libgtk-3-0 libxshmfence1 \
+    libegl1 libgl1 libgles2 \
+    pulseaudio tzdata locales \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set Python 3.12 as default and install pip
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 && \
+    python3.12 -m ensurepip --upgrade && \
+    python3.12 -m pip install --upgrade pip
+
+# Install VirtualGL
+RUN apt-get update && \
+    wget -q https://github.com/VirtualGL/virtualgl/releases/download/${VIRTUALGL_VERSION}/virtualgl_${VIRTUALGL_VERSION}_amd64.deb && \
+    apt-get install -y ./virtualgl_${VIRTUALGL_VERSION}_amd64.deb && \
+    rm virtualgl_${VIRTUALGL_VERSION}_amd64.deb && \
+    rm -rf /var/lib/apt/lists/*
+
+# Configure locales
+RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
+    sed -i '/ru_RU.UTF-8/s/^# //g' /etc/locale.gen && \
+    locale-gen
+
+# Install Google Chrome
+RUN mkdir -p /etc/apt/keyrings && \
+    wget -q -O /etc/apt/keyrings/google-chrome.asc https://dl.google.com/linux/linux_signing_key.pub && \
+    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.asc] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
+    apt-get update && \
+    apt-get install -y google-chrome-${CHROME_VERSION} && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN python3.12 -m pip install --no-cache-dir -r requirements.txt
+
+# Copy application
+COPY antidetect/ ./antidetect/
+COPY profiles/ ./profiles/
+COPY examples/ ./examples/
+
+# Copy VirtualGL entrypoint
+COPY entrypoint-vgl.sh /entrypoint-vgl.sh
+RUN chmod +x /entrypoint-vgl.sh
+
+ENTRYPOINT ["/entrypoint-vgl.sh"]
+CMD ["python", "-c", "print('VirtualGL ready')"]

@@ -224,11 +224,25 @@ antidetect-gpu:
 
 #### Результаты
 
-| Режим | GPU | WebGL confidence | like_headless |
-|-------|-----|------------------|---------------|
-| Docker + Xvfb | llvmpipe (software) | LOW | ~44% |
-| Docker + X11 GPU | NVIDIA RTX 3060 | HIGH | ~31% |
-| Локально | NVIDIA RTX 3060 | HIGH | 31% |
+| Режим | GPU | WebGL confidence | like_headless | Окно на хосте |
+|-------|-----|------------------|---------------|---------------|
+| `antidetect` (Xvfb) | llvmpipe (software) | LOW | ~44% | Нет |
+| `antidetect-gpu` (X11) | NVIDIA RTX 3060 | HIGH | ~31% | Да |
+| `antidetect-vgl` (VirtualGL) | llvmpipe (software) | LOW | ~44% | Нет |
+| Локально | NVIDIA RTX 3060 | HIGH | 31% | Да |
+
+#### VirtualGL НЕ работает с Chrome
+
+**Исследование (2026-01-22)**: VirtualGL не может предоставить GPU для Chrome:
+- VirtualGL перехватывает GLX вызовы через LD_PRELOAD
+- Chrome использует ANGLE/EGL для WebGL (не GLX)
+- Флаги `--use-angle=gl`, `--use-gl=egl` не помогают
+- Даже с vglrun Chrome видит только llvmpipe на Xvfb
+
+**Вывод**: Для headless GPU с Chrome нужен либо:
+1. X11 forwarding к реальному X-серверу с GPU (antidetect-gpu)
+2. Xorg с NVIDIA driver внутри Docker (требует privileged mode)
+3. Xpra/TurboVNC с VirtualGL backend
 
 **⚠️ Важно**: Docker Desktop на Linux НЕ поддерживает GPU — работает только Native Docker Engine.
 

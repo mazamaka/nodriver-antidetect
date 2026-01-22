@@ -95,6 +95,45 @@ services:
         limits:
           memory: 4G
 
+  # VirtualGL mode - headless with real GPU (no window on host)
+  # Run: docker compose up antidetect-vgl
+  antidetect-vgl:
+    build:
+      context: .
+      dockerfile: Dockerfile.vgl
+    image: mazamaka/nodriver-antidetect:vgl
+    container_name: nodriver-antidetect-vgl
+    runtime: nvidia
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia-modeset:/dev/nvidia-modeset
+      - /dev/nvidia-uvm:/dev/nvidia-uvm
+      - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all,graphics,display,compute,utility
+      # Fingerprint settings
+      - AD_TIMEZONE=Europe/Budapest
+      - AD_LOCALE=ru
+      - AD_SCREEN_WIDTH=1920
+      - AD_SCREEN_HEIGHT=1080
+      - AD_DEVICE_MEMORY=8
+      - AD_HARDWARE_CONCURRENCY=12
+      - AD_PLATFORM=Linux x86_64
+      - AD_WEBGL_VENDOR=Google Inc. (NVIDIA Corporation)
+      - AD_WEBGL_RENDERER=ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)
+      - AD_LANGUAGES=ru,en-US,en,uk
+    volumes:
+      - ./output:/output
+      - ./examples:/app/examples:ro
+    command: ["python", "/app/examples/test_fingerprint.py", "--output", "/output"]
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
   # Test service with different profile
   antidetect-windows:
     build: .
