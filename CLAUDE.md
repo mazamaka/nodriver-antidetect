@@ -1,7 +1,7 @@
 # nodriver-antidetect
 
 Антидетект браузер на базе nodriver для автоматизации и мульти-аккаунтинга.
-Версия: 2.6.0
+Версия: 2.6.1
 
 ## Архитектура
 
@@ -180,6 +180,40 @@ async with AntidetectBrowser(profile="mazamaka_local") as browser:
 3. Автоматически применить к профилю
 
 **Польза:** Консистентный fingerprint — если прокси US, то и timezone/language будут US.
+
+---
+
+## Changelog v2.6.1 (2026-01-22)
+
+### WebGPU Fingerprint Fix
+
+**Проблема**: CreepJS показывал хеш WebGPU `67860203` вместо `unsupported`, что не соответствовало реальному браузеру без WebGPU поддержки.
+
+**Решение**: Добавлены Chrome флаги для полного отключения WebGPU:
+
+```bash
+--disable-features=WebGPU,WebGPUService,WebGPUExperimentalFeatures,Vulkan
+--use-angle=gl
+```
+
+**Почему это работает**:
+- WebGPU требует Vulkan backend
+- `--use-angle=gl` заставляет Chrome использовать OpenGL вместо Vulkan
+- Без Vulkan `navigator.gpu` становится `undefined`
+- WebGL продолжает работать через OpenGL
+
+**Результат**: `webgpu: unsupported` ✅ — идентично реальному браузеру.
+
+### Navigator Properties Fix
+
+Исправлены все несоответствия Navigator с реальным Chrome:
+
+| Параметр | До | После | Реальный браузер |
+|----------|-----|-------|------------------|
+| webgpu | 67860203 | unsupported | unsupported ✅ |
+| userAgentData | 144.0.0.0 | 144.0.7559.59 | 144.0.7559.59 ✅ |
+| architecture | x86_64_64 | x86_64 | x86_64 ✅ |
+| platformVersion | 6.5.0 | (empty) | (empty) ✅ |
 
 ---
 

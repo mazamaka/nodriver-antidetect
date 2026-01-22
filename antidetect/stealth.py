@@ -85,6 +85,7 @@ def _build_config(profile: "FingerprintProfile") -> dict:
     scr = profile.screen
     wgl = profile.webgl
     media = profile.media_devices
+    nav = profile.navigator
 
     # Generate fake device list (empty labels = no permission granted, realistic)
     devices = []
@@ -132,6 +133,11 @@ def _build_config(profile: "FingerprintProfile") -> dict:
         },
         # Plugins (CDP cannot spoof)
         "plugins": _generate_plugins_config(),
+        # Navigator properties (doNotTrack)
+        # Note: WebGPU disabled via Chrome flags, not JS
+        "navigator": {
+            "doNotTrack": nav.do_not_track,
+        },
     }
 
 
@@ -157,6 +163,7 @@ def build_stealth_script(profile: "FingerprintProfile") -> str:
     js_battery = load_js("battery")
     js_network = load_js("network")
     js_permissions = load_js("permissions")
+    js_navigator = load_js("navigator")
     js_cleanup = load_js("cleanup")
 
     return f"""(function() {{
@@ -183,6 +190,8 @@ const C = {json.dumps(config)};
 {js_network}
 
 {js_permissions}
+
+{js_navigator}
 
 {js_cleanup}
 

@@ -76,6 +76,11 @@ class ChromeArgsBuilder:
             "--enable-webgl2",
             "--ignore-gpu-blocklist",
 
+            # === Disable WebGPU (not supported on most Linux systems) ===
+            # Multiple methods to ensure WebGPU is fully disabled
+            "--disable-features=WebGPU,WebGPUService,WebGPUExperimentalFeatures,Vulkan",
+            "--use-angle=gl",  # Use OpenGL instead of Vulkan (WebGPU needs Vulkan)
+
             # === Storage: disable encryption for portable sessions ===
             "--password-store=basic",
         ]

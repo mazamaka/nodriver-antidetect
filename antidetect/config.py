@@ -60,28 +60,50 @@ def get_chrome_version() -> str:
     return default_version
 
 
-def build_user_agent(platform: str, chrome_version: str | None = None) -> str:
-    """Build User-Agent string for given platform and Chrome version."""
-    version = chrome_version or get_chrome_version()
+def get_reduced_chrome_version(full_version: str) -> str:
+    """
+    Get reduced Chrome version for UA reduction (Chrome 107+).
 
-    # Platform-specific UA templates
+    Chrome UA reduction: 144.0.7559.59 -> 144.0.0.0
+    Only major version is shown, rest are zeros.
+    """
+    parts = full_version.split(".")
+    if len(parts) >= 1:
+        return f"{parts[0]}.0.0.0"
+    return full_version
+
+
+def build_user_agent(platform: str, chrome_version: str | None = None) -> str:
+    """Build User-Agent string for given platform and Chrome version.
+
+    Note: Chrome 107+ uses UA reduction in the User-Agent string,
+    showing only major version (144.0.0.0 instead of 144.0.7559.59).
+    But userAgentData (Client Hints) still shows full version.
+    """
+    full_version = chrome_version or get_chrome_version()
+
+    # UA reduction: use major.0.0.0 in User-Agent string
+    reduced_version = get_reduced_chrome_version(full_version)
+
+    # Platform-specific UA templates (with reduced version)
     templates = {
-        "Linux x86_64": f"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36",
-        "Win32": f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36",
-        "MacIntel": f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36",
+        "Linux x86_64": f"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{reduced_version} Safari/537.36",
+        "Win32": f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{reduced_version} Safari/537.36",
+        "MacIntel": f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{reduced_version} Safari/537.36",
     }
 
     return templates.get(platform, templates["Linux x86_64"])
 
 
 def build_app_version(platform: str, chrome_version: str | None = None) -> str:
-    """Build appVersion string for given platform."""
-    version = chrome_version or get_chrome_version()
+    """Build appVersion string for given platform (uses reduced version)."""
+    full_version = chrome_version or get_chrome_version()
+    reduced_version = get_reduced_chrome_version(full_version)
 
     templates = {
-        "Linux x86_64": f"5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36",
-        "Win32": f"5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36",
-        "MacIntel": f"5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36",
+        "Linux x86_64": f"5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{reduced_version} Safari/537.36",
+        "Win32": f"5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{reduced_version} Safari/537.36",
+        "MacIntel": f"5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{reduced_version} Safari/537.36",
     }
 
     return templates.get(platform, templates["Linux x86_64"])
