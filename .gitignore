@@ -62,3 +62,8 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Local config and generated data
+config.json
+fingerprints/
+scripts/
