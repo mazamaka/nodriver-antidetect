@@ -228,8 +228,21 @@ antidetect-gpu:
 |-------|-----|------------------|---------------|---------------|
 | `antidetect` (Xvfb) | llvmpipe (software) | LOW | ~44% | Нет |
 | `antidetect-gpu` (X11) | NVIDIA RTX 3060 | HIGH | ~31% | Да |
+| `antidetect-xorg` (Xorg+NVIDIA) | **NVIDIA RTX 3060** | **HIGH** | ~44% | **Нет** ✅ |
 | `antidetect-vgl` (VirtualGL) | llvmpipe (software) | LOW | ~44% | Нет |
 | Локально | NVIDIA RTX 3060 | HIGH | 31% | Да |
+
+#### Headless GPU: antidetect-xorg (рекомендуется)
+
+```bash
+# Запуск с реальным GPU без окна на хосте
+docker compose up antidetect-xorg
+```
+
+**Требования:**
+- NVIDIA GPU
+- nvidia-container-toolkit
+- privileged mode (для Xorg)
 
 #### VirtualGL НЕ работает с Chrome
 
