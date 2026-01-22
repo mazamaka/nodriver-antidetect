@@ -40,10 +40,21 @@ class CDPOverridesHandler:
         Args:
             page: Browser tab to apply overrides to
         """
+        # Enable Page domain first - required for add_script_to_evaluate_on_new_document
+        await self._enable_page_domain(page)
         await self._apply_user_agent(page)
         await self._apply_timezone(page)
         await self._apply_locale(page)
+        await self._apply_color_scheme(page)
         await self._apply_stealth_script(page)
+
+    async def _enable_page_domain(self, page: "uc.Tab") -> None:
+        """Enable Page domain - required for script injection on navigation."""
+        try:
+            await page.send(cdp.page.enable())
+            logger.debug("CDP: Page domain enabled")
+        except Exception as e:
+            logger.debug(f"CDP Page.enable: {e}")
 
     async def _apply_user_agent(self, page: "uc.Tab") -> None:
         """Set User-Agent and Client Hints via CDP."""
@@ -110,6 +121,24 @@ class CDPOverridesHandler:
             logger.debug(f"CDP: Locale set to {locale_id}")
         except Exception as e:
             logger.debug(f"CDP Locale override: {e}")
+
+    async def _apply_color_scheme(self, page: "uc.Tab") -> None:
+        """Set prefers-color-scheme to dark via CDP.
+
+        Real browsers typically have dark scheme. CreepJS checks this
+        as 'prefersLightColor' - should be false for real browser.
+        """
+        try:
+            await page.send(
+                cdp.emulation.set_emulated_media(
+                    features=[
+                        cdp.emulation.MediaFeature(name="prefers-color-scheme", value="dark")
+                    ]
+                )
+            )
+            logger.debug("CDP: Color scheme set to dark")
+        except Exception as e:
+            logger.debug(f"CDP Color scheme override: {e}")
 
     async def _apply_stealth_script(self, page: "uc.Tab") -> None:
         """Register stealth script for things CDP can't do.

@@ -196,9 +196,9 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all,graphics,display,compute,utility
-      # Screen resolution (VNC desktop size)
-      - SCREEN_WIDTH=1920
-      - SCREEN_HEIGHT=1080
+      # Screen resolution (VNC desktop size) - MUST match profile!
+      - SCREEN_WIDTH=3440
+      - SCREEN_HEIGHT=1440
       # VNC settings
       - VNC_PASSWORD=antidetect
       - VNC_PORT=5900

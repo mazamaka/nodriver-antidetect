@@ -1,7 +1,7 @@
 # nodriver-antidetect
 
 Антидетект браузер на базе nodriver для автоматизации и мульти-аккаунтинга.
-Версия: 2.6.1
+Версия: 2.6.2
 
 ## Архитектура
 
@@ -180,6 +180,86 @@ async with AntidetectBrowser(profile="mazamaka_local") as browser:
 3. Автоматически применить к профилю
 
 **Польза:** Консистентный fingerprint — если прокси US, то и timezone/language будут US.
+
+---
+
+## Changelog v2.6.2 (2026-01-22)
+
+### PluginArray Type Check Fix
+
+**Проблема**: Sannysoft детектировал что `navigator.plugins` не является настоящим `PluginArray`:
+```
+Plugins is of type PluginArray: failed
+```
+
+**Причина**: Наш plugins.js создавал обычный JavaScript объект вместо объекта с правильным prototype chain.
+
+**Решение**: Используем `Object.create()` с реальными прототипами:
+```javascript
+const PluginArrayProto = Object.getPrototypeOf(navigator.plugins);
+const pluginArray = Object.create(PluginArrayProto);
+```
+
+**Результат**: `navigator.plugins instanceof PluginArray === true` ✅
+
+### MQ_SCREEN Fix (Media Query Screen Detection)
+
+**Проблема**: Sannysoft `MQ_SCREEN: FAIL` — CSS media queries видели реальное разрешение Xorg, а не spoofed.
+
+**Причина**: В docker-compose.yml Xorg разрешение было 1920x1080, но профиль использовал 3440x1440.
+
+**Решение**: Синхронизировать Xorg разрешение с профилем:
+```yaml
+# Screen resolution (VNC desktop size) - MUST match profile!
+- SCREEN_WIDTH=3440
+- SCREEN_HEIGHT=1440
+```
+
+**Результат**: `MQ_SCREEN: ok` ✅
+
+### Screen Properties Fix
+
+**Проблема**: Screen properties не подменялись при навигации, `add_script_to_evaluate_on_new_document` не работал.
+
+**Причина**:
+1. `Page.enable()` не вызывался перед регистрацией скрипта
+2. `Screen.prototype` свойства — DATA properties, не getters (в некоторых Chrome builds)
+
+**Решение**:
+1. Добавлен `_enable_page_domain()` в cdp_handler.py
+2. screen.js переписан с `defineProperty` вместо `wrapGetter`
+
+### prefers-color-scheme Fix
+
+**Проблема**: CreepJS показывал `prefersLightColor: true`, реальный браузер — `false`.
+
+**Решение**: Добавлен CDP override для dark mode:
+```python
+await page.send(
+    cdp.emulation.set_emulated_media(
+        features=[cdp.emulation.MediaFeature(name="prefers-color-scheme", value="dark")]
+    )
+)
+```
+
+### Результаты (Sannysoft)
+
+| Тест | До | После |
+|------|-----|-------|
+| Plugins Length | 5 ✅ | 5 ✅ |
+| Plugins is type PluginArray | failed ❌ | passed ✅ |
+| MQ_SCREEN | FAIL ❌ | ok ✅ |
+| All HEADCHR checks | ok ✅ | ok ✅ |
+
+### Результаты (CreepJS)
+
+| Метрика | Значение |
+|---------|----------|
+| like_headless | 31% ✅ |
+| headless | 33% |
+| stealth | 0% ✅ |
+| plugins | 5 ✅ |
+| WebGL confidence | high ✅ |
 
 ---
 
