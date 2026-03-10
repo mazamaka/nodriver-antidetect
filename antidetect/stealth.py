@@ -21,11 +21,12 @@ from .js import load_js
 
 if TYPE_CHECKING:
     import nodriver as uc
+
     from .config import FingerprintProfile
 
 
 # Browser chrome height (toolbar, tabs, etc.)
-BROWSER_CHROME_HEIGHT = 40
+from .constants import BROWSER_CHROME_HEIGHT
 
 
 def _generate_plugins_config() -> list[dict]:
@@ -37,7 +38,11 @@ def _generate_plugins_config() -> list[dict]:
             "description": "Portable Document Format",
             "filename": "internal-pdf-viewer",
             "mimeTypes": [
-                {"type": "application/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
+                {
+                    "type": "application/pdf",
+                    "suffixes": "pdf",
+                    "description": "Portable Document Format",
+                },
                 {"type": "text/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
             ],
         },
@@ -46,7 +51,11 @@ def _generate_plugins_config() -> list[dict]:
             "description": "Portable Document Format",
             "filename": "internal-pdf-viewer",
             "mimeTypes": [
-                {"type": "application/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
+                {
+                    "type": "application/pdf",
+                    "suffixes": "pdf",
+                    "description": "Portable Document Format",
+                },
                 {"type": "text/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
             ],
         },
@@ -55,7 +64,11 @@ def _generate_plugins_config() -> list[dict]:
             "description": "Portable Document Format",
             "filename": "internal-pdf-viewer",
             "mimeTypes": [
-                {"type": "application/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
+                {
+                    "type": "application/pdf",
+                    "suffixes": "pdf",
+                    "description": "Portable Document Format",
+                },
                 {"type": "text/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
             ],
         },
@@ -64,7 +77,11 @@ def _generate_plugins_config() -> list[dict]:
             "description": "Portable Document Format",
             "filename": "internal-pdf-viewer",
             "mimeTypes": [
-                {"type": "application/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
+                {
+                    "type": "application/pdf",
+                    "suffixes": "pdf",
+                    "description": "Portable Document Format",
+                },
                 {"type": "text/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
             ],
         },
@@ -73,14 +90,18 @@ def _generate_plugins_config() -> list[dict]:
             "description": "Portable Document Format",
             "filename": "internal-pdf-viewer",
             "mimeTypes": [
-                {"type": "application/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
+                {
+                    "type": "application/pdf",
+                    "suffixes": "pdf",
+                    "description": "Portable Document Format",
+                },
                 {"type": "text/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
             ],
         },
     ]
 
 
-def _build_config(profile: "FingerprintProfile") -> dict:
+def _build_config(profile: FingerprintProfile) -> dict:
     """Build configuration object for stealth script."""
     scr = profile.screen
     wgl = profile.webgl
@@ -89,16 +110,20 @@ def _build_config(profile: "FingerprintProfile") -> dict:
 
     # Generate fake device list (empty labels = no permission granted, realistic)
     devices = []
-    for kind, count in [("audioinput", media.audio_inputs),
-                        ("audiooutput", media.audio_outputs),
-                        ("videoinput", media.video_inputs)]:
+    for kind, count in [
+        ("audioinput", media.audio_inputs),
+        ("audiooutput", media.audio_outputs),
+        ("videoinput", media.video_inputs),
+    ]:
         for _ in range(count):
-            devices.append({
-                "deviceId": secrets.token_hex(32),
-                "kind": kind,
-                "label": "",  # Empty until getUserMedia permission
-                "groupId": secrets.token_hex(32),
-            })
+            devices.append(
+                {
+                    "deviceId": secrets.token_hex(32),
+                    "kind": kind,
+                    "label": "",  # Empty until getUserMedia permission
+                    "groupId": secrets.token_hex(32),
+                }
+            )
 
     return {
         # Screen (CDP setDeviceMetricsOverride is detectable, so we use JS)
@@ -141,7 +166,7 @@ def _build_config(profile: "FingerprintProfile") -> dict:
     }
 
 
-def build_stealth_script(profile: "FingerprintProfile") -> str:
+def build_stealth_script(profile: FingerprintProfile) -> str:
     """
     Build stealth script for things CDP cannot do.
 
@@ -198,7 +223,7 @@ const C = {json.dumps(config)};
 }})();"""
 
 
-async def apply_stealth(browser: "uc.Browser", profile: "FingerprintProfile") -> None:
+async def apply_stealth(browser: uc.Browser, profile: FingerprintProfile) -> None:
     """
     Register stealth script for all pages in this browser.
 
@@ -225,7 +250,7 @@ async def apply_stealth(browser: "uc.Browser", profile: "FingerprintProfile") ->
         logger.warning(f"Stealth injection failed: {e}")
 
 
-async def apply_stealth_to_page(page: "uc.Tab", profile: "FingerprintProfile") -> None:
+async def apply_stealth_to_page(page: uc.Tab, profile: FingerprintProfile) -> None:
     """Inject stealth script into page context (fallback method)."""
     script = build_stealth_script(profile)
     try:

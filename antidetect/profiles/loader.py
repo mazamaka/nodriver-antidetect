@@ -1,14 +1,12 @@
-"""
-JSON Profile Loader for antidetect browser fingerprints.
+"""JSON Profile Loader for antidetect browser fingerprints.
 
-Загрузка профилей фингерпринтов из JSON файлов.
-Позволяет легко подставлять новые профили без изменения кода.
+Load fingerprint profiles from JSON files.
+Allows easy profile switching without code changes.
 """
 
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 
@@ -60,18 +58,18 @@ def _get(data: dict, *keys: str, default: Any = None) -> Any:
 
 def load_profile_from_json(path: str | Path) -> FingerprintProfile:
     """
-    Загрузить профиль фингерпринта из JSON файла.
+    Load fingerprint profile from JSON file.
 
     Args:
-        path: Путь к JSON файлу с профилем
+        path: Path to JSON profile file
 
     Returns:
-        FingerprintProfile объект
+        FingerprintProfile instance
 
     Raises:
-        FileNotFoundError: Если файл не найден
-        json.JSONDecodeError: Если JSON невалидный
-        ValueError: Если структура JSON некорректная
+        FileNotFoundError: If file not found
+        json.JSONDecodeError: If JSON is invalid
+        ValueError: If JSON structure is incorrect
     """
     path = Path(path)
 
@@ -80,7 +78,7 @@ def load_profile_from_json(path: str | Path) -> FingerprintProfile:
 
     logger.info(f"Loading fingerprint profile from: {path}")
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
 
     return _parse_profile(data, path.stem)
@@ -88,20 +86,20 @@ def load_profile_from_json(path: str | Path) -> FingerprintProfile:
 
 def load_profile_from_dict(data: dict[str, Any], name: str = "custom") -> FingerprintProfile:
     """
-    Создать профиль из словаря (dict).
+    Create profile from dictionary.
 
     Args:
-        data: Словарь с данными профиля
-        name: Имя профиля
+        data: Dictionary with profile data
+        name: Profile name
 
     Returns:
-        FingerprintProfile объект
+        FingerprintProfile instance
     """
     return _parse_profile(data, name)
 
 
 def _parse_profile(data: dict[str, Any], name: str) -> FingerprintProfile:
-    """Парсинг данных профиля в FingerprintProfile."""
+    """Parse profile data into FingerprintProfile."""
     # Cached defaults
     wgl_def = _get_defaults(WebGLConfig)
     scr_def = _get_defaults(ScreenConfig)
@@ -131,10 +129,14 @@ def _parse_profile(data: dict[str, Any], name: str) -> FingerprintProfile:
         width=width,
         height=height,
         avail_width=_get(scr, "avail_width", "availWidth", default=width),
-        avail_height=_get(scr, "avail_height", "availHeight", default=height - _BROWSER_CHROME_HEIGHT),
+        avail_height=_get(
+            scr, "avail_height", "availHeight", default=height - _BROWSER_CHROME_HEIGHT
+        ),
         color_depth=_get(scr, "color_depth", "colorDepth", default=scr_def.color_depth),
         pixel_depth=_get(scr, "pixel_depth", "pixelDepth", default=scr_def.pixel_depth),
-        device_pixel_ratio=_get(scr, "device_pixel_ratio", "devicePixelRatio", default=scr_def.device_pixel_ratio),
+        device_pixel_ratio=_get(
+            scr, "device_pixel_ratio", "devicePixelRatio", default=scr_def.device_pixel_ratio
+        ),
     )
 
     # Navigator
@@ -160,9 +162,13 @@ def _parse_profile(data: dict[str, Any], name: str) -> FingerprintProfile:
         user_agent=user_agent,
         vendor=_get(nav, "vendor", default=nav_def.vendor),
         languages=languages,
-        hardware_concurrency=_get(nav, "hardware_concurrency", "hardwareConcurrency", default=nav_def.hardware_concurrency),
+        hardware_concurrency=_get(
+            nav, "hardware_concurrency", "hardwareConcurrency", default=nav_def.hardware_concurrency
+        ),
         device_memory=_get(nav, "device_memory", "deviceMemory", default=nav_def.device_memory),
-        max_touch_points=_get(nav, "max_touch_points", "maxTouchPoints", default=nav_def.max_touch_points),
+        max_touch_points=_get(
+            nav, "max_touch_points", "maxTouchPoints", default=nav_def.max_touch_points
+        ),
         do_not_track=_get(nav, "do_not_track", "doNotTrack", default=None),
         webdriver=_get(nav, "webdriver", default=False),
     )
@@ -170,9 +176,15 @@ def _parse_profile(data: dict[str, Any], name: str) -> FingerprintProfile:
     # Media devices
     media = _get(data, "media_devices", "mediaDevices", default={})
     media_devices = MediaDevicesConfig(
-        has_audio_input=_get(media, "has_audio_input", "hasAudioInput", default=media_def.has_audio_input),
-        has_audio_output=_get(media, "has_audio_output", "hasAudioOutput", default=media_def.has_audio_output),
-        has_video_input=_get(media, "has_video_input", "hasVideoInput", default=media_def.has_video_input),
+        has_audio_input=_get(
+            media, "has_audio_input", "hasAudioInput", default=media_def.has_audio_input
+        ),
+        has_audio_output=_get(
+            media, "has_audio_output", "hasAudioOutput", default=media_def.has_audio_output
+        ),
+        has_video_input=_get(
+            media, "has_video_input", "hasVideoInput", default=media_def.has_video_input
+        ),
         audio_inputs=_get(media, "audio_inputs", "audioInputs", default=media_def.audio_inputs),
         audio_outputs=_get(media, "audio_outputs", "audioOutputs", default=media_def.audio_outputs),
         video_inputs=_get(media, "video_inputs", "videoInputs", default=media_def.video_inputs),
@@ -197,7 +209,12 @@ def _parse_profile(data: dict[str, Any], name: str) -> FingerprintProfile:
         canvas_noise=_get(data, "canvas_noise", "canvasNoise", default=fp_def.canvas_noise),
         audio_noise=_get(data, "audio_noise", "audioNoise", default=fp_def.audio_noise),
         webrtc_enabled=_get(data, "webrtc_enabled", "webrtcEnabled", default=fp_def.webrtc_enabled),
-        webrtc_local_ips_hidden=_get(data, "webrtc_local_ips_hidden", "webrtcLocalIpsHidden", default=fp_def.webrtc_local_ips_hidden),
+        webrtc_local_ips_hidden=_get(
+            data,
+            "webrtc_local_ips_hidden",
+            "webrtcLocalIpsHidden",
+            default=fp_def.webrtc_local_ips_hidden,
+        ),
     )
 
     logger.info(f"Loaded profile: {profile_name}")
@@ -206,11 +223,11 @@ def _parse_profile(data: dict[str, Any], name: str) -> FingerprintProfile:
 
 def save_profile_to_json(profile: FingerprintProfile, path: str | Path) -> None:
     """
-    Сохранить профиль фингерпринта в JSON файл.
+    Save fingerprint profile to JSON file.
 
     Args:
-        profile: FingerprintProfile объект
-        path: Путь для сохранения JSON файла
+        profile: FingerprintProfile instance
+        path: Path to save JSON file
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -224,7 +241,7 @@ def save_profile_to_json(profile: FingerprintProfile, path: str | Path) -> None:
 
 
 def profile_to_dict(profile: FingerprintProfile) -> dict[str, Any]:
-    """Конвертировать профиль в словарь для JSON."""
+    """Convert profile to dictionary for JSON serialization."""
     return {
         "name": profile.name,
         "webgl": {
@@ -274,15 +291,15 @@ def profile_to_dict(profile: FingerprintProfile) -> dict[str, Any]:
     }
 
 
-def list_profiles(profiles_dir: str | Path = None) -> list[str]:
+def list_profiles(profiles_dir: str | Path | None = None) -> list[str]:
     """
-    Получить список доступных JSON профилей.
+    List available JSON profiles.
 
     Args:
-        profiles_dir: Папка с профилями (по умолчанию ./profiles)
+        profiles_dir: Profiles directory (default: ./profiles)
 
     Returns:
-        Список имён профилей (без .json)
+        List of profile names (without .json extension)
     """
     if profiles_dir is None:
         profiles_dir = Path(__file__).parent.parent.parent / "profiles"
@@ -299,16 +316,16 @@ def list_profiles(profiles_dir: str | Path = None) -> list[str]:
     return sorted(profiles)
 
 
-def get_profile_path(name: str, profiles_dir: str | Path = None) -> Path:
+def get_profile_path(name: str, profiles_dir: str | Path | None = None) -> Path:
     """
-    Получить путь к JSON профилю по имени.
+    Get path to JSON profile by name.
 
     Args:
-        name: Имя профиля (без .json)
-        profiles_dir: Папка с профилями
+        name: Profile name (without .json)
+        profiles_dir: Profiles directory
 
     Returns:
-        Полный путь к JSON файлу
+        Full path to JSON file
     """
     if profiles_dir is None:
         profiles_dir = Path(__file__).parent.parent.parent / "profiles"

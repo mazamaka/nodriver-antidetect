@@ -136,8 +136,7 @@ class SessionManager:
         """
         if not self._is_valid_name(name):
             raise ValueError(
-                f"Invalid session name: {name}. "
-                "Use only alphanumeric, underscores, hyphens."
+                f"Invalid session name: {name}. Use only alphanumeric, underscores, hyphens."
             )
 
         session_dir = self.base_dir / name
@@ -177,8 +176,7 @@ class SessionManager:
 
         if not force and self.is_locked(name):
             raise RuntimeError(
-                f"Session is locked (in use): {name}. "
-                "Use force=True or close the browser first."
+                f"Session is locked (in use): {name}. Use force=True or close the browser first."
             )
 
         self.unlock(name)
@@ -267,7 +265,7 @@ class SessionManager:
             self._locks[name] = f
             logger.debug(f"Locked session: {name}")
             return True
-        except (OSError, IOError):
+        except OSError:
             return False
 
     def unlock(self, name: str) -> None:
@@ -279,8 +277,8 @@ class SessionManager:
                 f.close()
                 lock_file = self.base_dir / name / self.LOCK_FILE
                 lock_file.unlink(missing_ok=True)
-            except Exception:
-                pass
+            except OSError as e:
+                logger.debug(f"Failed to unlock session {name}: {e}")
             finally:
                 del self._locks[name]
             logger.debug(f"Unlocked session: {name}")
@@ -297,12 +295,12 @@ class SessionManager:
             return False
 
         try:
-            f = open(lock_file, "r")
+            f = open(lock_file)
             fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             f.close()
             return False
-        except (OSError, IOError):
+        except OSError:
             return True
 
     # === Private methods ===

@@ -1,0 +1,113 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nodriver-antidetect"
+version = "2.7.0"
+description = "Antidetect browser with CDP-level fingerprint spoofing based on nodriver"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "Maksym Babenko", email = "mazamaka@users.noreply.github.com" },
+]
+keywords = [
+    "antidetect",
+    "browser",
+    "fingerprint",
+    "stealth",
+    "nodriver",
+    "cdp",
+    "chrome",
+    "automation",
+    "anti-fingerprinting",
+    "web-scraping",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+    "Topic :: Software Development :: Testing",
+    "Typing :: Typed",
+]
+dependencies = [
+    "nodriver>=0.48.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.0.0",
+    "loguru>=0.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.9.0",
+    "mypy>=1.14.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.25.0",
+]
+test = [
+    "httpx>=0.28.0",
+    "httpx[socks]",
+    "faker>=25.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/mazamaka/nodriver-antidetect"
+Repository = "https://github.com/mazamaka/nodriver-antidetect"
+Issues = "https://github.com/mazamaka/nodriver-antidetect/issues"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "S",     # flake8-bandit (security)
+    "T20",   # flake8-print
+    "SIM",   # flake8-simplify
+    "TCH",   # flake8-type-checking
+    "RUF",   # ruff-specific rules
+]
+ignore = [
+    "S603",  # subprocess call - check for untrusted input
+    "S607",  # starting a process with a partial executable path
+    "E501",  # line too long (handled by formatter)
+    "SIM102", # nested if -- sometimes more readable
+    "SIM105", # contextlib.suppress -- less explicit than try/except
+    "SIM115", # context manager for open -- not applicable for file locking
+]
+
+[tool.ruff.lint.per-file-ignores]
+"examples/*" = ["T20", "S"]   # allow print() and security warnings in examples
+"tests/*" = ["S"]              # allow security warnings in tests
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["nodriver.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

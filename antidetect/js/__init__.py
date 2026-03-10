@@ -38,4 +38,4 @@ def load_all_js() -> dict[str, str]:
     return {f.stem: f.read_text(encoding="utf-8") for f in JS_DIR.glob("*.js")}
 
 
-__all__ = ["load_js", "load_all_js", "JS_DIR"]
+__all__ = ["JS_DIR", "load_all_js", "load_js"]

@@ -7,15 +7,14 @@ import subprocess
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
 from zoneinfo import ZoneInfo
 
 from loguru import logger
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
-
 # === Chrome Version Detection ===
+
 
 @lru_cache(maxsize=1)
 def get_chrome_version() -> str:
@@ -111,6 +110,7 @@ def build_app_version(platform: str, chrome_version: str | None = None) -> str:
 
 # === Timezone Utilities ===
 
+
 def get_timezone_offset(timezone: str) -> int:
     """
     Get timezone offset in minutes from UTC using zoneinfo.
@@ -134,13 +134,16 @@ def get_timezone_offset(timezone: str) -> int:
 
 # === Pydantic Models ===
 
+
 class WebGLConfig(BaseModel):
     """WebGL fingerprint configuration."""
 
     vendor: str = "Google Inc. (NVIDIA Corporation)"
     renderer: str = "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)"
     unmasked_vendor: str = "Google Inc. (NVIDIA Corporation)"
-    unmasked_renderer: str = "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)"
+    unmasked_renderer: str = (
+        "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)"
+    )
 
 
 class ScreenConfig(BaseModel):
@@ -212,6 +215,7 @@ class FingerprintProfile(BaseModel):
 
 # === Main Configuration ===
 
+
 class AntidetectConfig(BaseSettings):
     """Main antidetect configuration from environment variables."""
 
@@ -251,9 +255,7 @@ class AntidetectConfig(BaseSettings):
     # Browser behavior
     headless: bool = Field(default=False, alias="AD_HEADLESS")
 
-    class Config:
-        env_prefix = ""
-        extra = "ignore"
+    model_config = {"env_prefix": "", "extra": "ignore"}
 
     def to_profile(self) -> FingerprintProfile:
         """
@@ -274,6 +276,7 @@ class AntidetectConfig(BaseSettings):
 
             if profile_path.exists():
                 from .profiles import load_profile_from_json
+
                 return load_profile_from_json(profile_path)
 
         # Build from environment variables
@@ -316,6 +319,7 @@ class AntidetectConfig(BaseSettings):
 
 # === Profile Loading Helpers ===
 
+
 def get_profile(name: str) -> FingerprintProfile:
     """
     Get profile by name from JSON files in profiles/ directory.
@@ -326,7 +330,7 @@ def get_profile(name: str) -> FingerprintProfile:
     Returns:
         FingerprintProfile loaded from JSON
     """
-    from .profiles import load_profile_from_json, PROFILES_DIR
+    from .profiles import PROFILES_DIR, load_profile_from_json
 
     profile_path = PROFILES_DIR / f"{name}.json"
     if not profile_path.exists():

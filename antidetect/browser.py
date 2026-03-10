@@ -7,6 +7,7 @@ CDP is more reliable because it works at browser level before any page code exec
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -71,7 +72,7 @@ class AntidetectBrowser:
 
         # Session management
         self._session_name = session
-        self._session_manager: "SessionManager | None" = None
+        self._session_manager: SessionManager | None = None
         self._user_data_dir: Path | None = None
 
         if session:
@@ -94,14 +95,14 @@ class AntidetectBrowser:
             return get_profile(profile)
         return profile
 
-    async def __aenter__(self) -> "AntidetectBrowser":
+    async def __aenter__(self) -> AntidetectBrowser:
         await self.start()
         return self
 
     async def __aexit__(self, *_) -> None:
         await self.stop()
 
-    async def start(self) -> "AntidetectBrowser":
+    async def start(self) -> AntidetectBrowser:
         """Start browser with stealth enabled at CDP level."""
         logger.info("Starting antidetect browser...")
 
@@ -140,10 +141,8 @@ class AntidetectBrowser:
             try:
                 # Graceful shutdown: close all tabs first (flushes cookies)
                 for tab in self._browser.tabs:
-                    try:
+                    with contextlib.suppress(Exception):
                         await tab.close()
-                    except Exception:
-                        pass
 
                 # Wait for Chrome to flush data to disk
                 await asyncio.sleep(0.5)

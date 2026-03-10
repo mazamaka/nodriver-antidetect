@@ -16,6 +16,7 @@ from .stealth import build_stealth_script
 
 if TYPE_CHECKING:
     import nodriver as uc
+
     from .config import FingerprintProfile
 
 
@@ -26,7 +27,7 @@ class CDPOverridesHandler:
     at browser level before any page code executes.
     """
 
-    def __init__(self, profile: "FingerprintProfile") -> None:
+    def __init__(self, profile: FingerprintProfile) -> None:
         """Initialize handler with fingerprint profile.
 
         Args:
@@ -34,7 +35,7 @@ class CDPOverridesHandler:
         """
         self.profile = profile
 
-    async def apply(self, page: "uc.Tab") -> None:
+    async def apply(self, page: uc.Tab) -> None:
         """Apply all CDP overrides to a page.
 
         Args:
@@ -48,7 +49,7 @@ class CDPOverridesHandler:
         await self._apply_color_scheme(page)
         await self._apply_stealth_script(page)
 
-    async def _enable_page_domain(self, page: "uc.Tab") -> None:
+    async def _enable_page_domain(self, page: uc.Tab) -> None:
         """Enable Page domain - required for script injection on navigation."""
         try:
             await page.send(cdp.page.enable())
@@ -56,7 +57,7 @@ class CDPOverridesHandler:
         except Exception as e:
             logger.debug(f"CDP Page.enable: {e}")
 
-    async def _apply_user_agent(self, page: "uc.Tab") -> None:
+    async def _apply_user_agent(self, page: uc.Tab) -> None:
         """Set User-Agent and Client Hints via CDP."""
         from .config import get_chrome_version
 
@@ -81,26 +82,36 @@ class CDPOverridesHandler:
                         model="",
                         mobile=False,
                         brands=[
-                            cdp.emulation.UserAgentBrandVersion(brand="Chromium", version=major_version),
-                            cdp.emulation.UserAgentBrandVersion(brand="Google Chrome", version=major_version),
+                            cdp.emulation.UserAgentBrandVersion(
+                                brand="Chromium", version=major_version
+                            ),
+                            cdp.emulation.UserAgentBrandVersion(
+                                brand="Google Chrome", version=major_version
+                            ),
                             cdp.emulation.UserAgentBrandVersion(brand="Not-A.Brand", version="24"),
                         ],
                         full_version_list=[
-                            cdp.emulation.UserAgentBrandVersion(brand="Chromium", version=full_chrome_version),
-                            cdp.emulation.UserAgentBrandVersion(brand="Google Chrome", version=full_chrome_version),
-                            cdp.emulation.UserAgentBrandVersion(brand="Not-A.Brand", version="24.0.0.0"),
+                            cdp.emulation.UserAgentBrandVersion(
+                                brand="Chromium", version=full_chrome_version
+                            ),
+                            cdp.emulation.UserAgentBrandVersion(
+                                brand="Google Chrome", version=full_chrome_version
+                            ),
+                            cdp.emulation.UserAgentBrandVersion(
+                                brand="Not-A.Brand", version="24.0.0.0"
+                            ),
                         ],
                         full_version=full_chrome_version,
                         bitness="64" if "64" in nav.platform else "32",
                         wow64=False,
-                    )
+                    ),
                 )
             )
             logger.debug("CDP: User-Agent + Client Hints set")
         except Exception as e:
             logger.debug(f"CDP User-Agent override: {e}")
 
-    async def _apply_timezone(self, page: "uc.Tab") -> None:
+    async def _apply_timezone(self, page: uc.Tab) -> None:
         """Set timezone via CDP."""
         try:
             await page.send(
@@ -110,19 +121,17 @@ class CDPOverridesHandler:
         except Exception as e:
             logger.debug(f"CDP Timezone override: {e}")
 
-    async def _apply_locale(self, page: "uc.Tab") -> None:
+    async def _apply_locale(self, page: uc.Tab) -> None:
         """Set locale via CDP."""
         try:
             # Convert locale format: "en-US" -> "en_US"
             locale_id = self.profile.timezone.locale.replace("-", "_")
-            await page.send(
-                cdp.emulation.set_locale_override(locale=locale_id)
-            )
+            await page.send(cdp.emulation.set_locale_override(locale=locale_id))
             logger.debug(f"CDP: Locale set to {locale_id}")
         except Exception as e:
             logger.debug(f"CDP Locale override: {e}")
 
-    async def _apply_color_scheme(self, page: "uc.Tab") -> None:
+    async def _apply_color_scheme(self, page: uc.Tab) -> None:
         """Set prefers-color-scheme to dark via CDP.
 
         Real browsers typically have dark scheme. CreepJS checks this
@@ -131,25 +140,21 @@ class CDPOverridesHandler:
         try:
             await page.send(
                 cdp.emulation.set_emulated_media(
-                    features=[
-                        cdp.emulation.MediaFeature(name="prefers-color-scheme", value="dark")
-                    ]
+                    features=[cdp.emulation.MediaFeature(name="prefers-color-scheme", value="dark")]
                 )
             )
             logger.debug("CDP: Color scheme set to dark")
         except Exception as e:
             logger.debug(f"CDP Color scheme override: {e}")
 
-    async def _apply_stealth_script(self, page: "uc.Tab") -> None:
+    async def _apply_stealth_script(self, page: uc.Tab) -> None:
         """Register stealth script for things CDP can't do.
 
         This handles: WebGL, plugins, canvas noise, media devices, etc.
         """
         try:
             script = build_stealth_script(self.profile)
-            await page.send(
-                cdp.page.add_script_to_evaluate_on_new_document(source=script)
-            )
+            await page.send(cdp.page.add_script_to_evaluate_on_new_document(source=script))
             # Also inject immediately for current context
             await page.evaluate(script)
             logger.debug("CDP: Stealth script registered")
@@ -181,7 +186,7 @@ class CDPOverridesHandler:
         return ""
 
 
-async def ensure_stealth_registered(page: "uc.Tab", profile: "FingerprintProfile") -> None:
+async def ensure_stealth_registered(page: uc.Tab, profile: FingerprintProfile) -> None:
     """Ensure stealth script is registered for next document load.
 
     Args:
@@ -190,8 +195,6 @@ async def ensure_stealth_registered(page: "uc.Tab", profile: "FingerprintProfile
     """
     try:
         script = build_stealth_script(profile)
-        await page.send(
-            cdp.page.add_script_to_evaluate_on_new_document(source=script)
-        )
+        await page.send(cdp.page.add_script_to_evaluate_on_new_document(source=script))
     except Exception as e:
         logger.debug(f"Stealth re-registration: {e}")

@@ -5,6 +5,8 @@ Provides undetectable fingerprint spoofing for web automation.
 """
 
 from .browser import AntidetectBrowser
+from .cdp_handler import CDPOverridesHandler
+from .chrome_args import ChromeArgsBuilder
 from .config import (
     AntidetectConfig,
     FingerprintProfile,
@@ -18,26 +20,19 @@ from .profiles import (
     load_profile_from_json,
     save_profile_to_json,
 )
-from .cdp_handler import CDPOverridesHandler
-from .chrome_args import ChromeArgsBuilder
 from .session import SessionManager, SessionMetadata
 from .stealth import apply_stealth, apply_stealth_to_page, build_stealth_script
 
-__version__ = "2.6.0"
+__version__ = "2.7.0"
 __all__ = [
     # Browser
     "AntidetectBrowser",
     # Config
     "AntidetectConfig",
+    # Advanced (for custom implementations)
+    "CDPOverridesHandler",
+    "ChromeArgsBuilder",
     "FingerprintProfile",
-    "get_profile",
-    "list_available_profiles",
-    "get_chrome_version",
-    # Profile loaders
-    "load_profile_from_json",
-    "load_profile_from_dict",
-    "save_profile_to_json",
-    "list_profiles",
     # Sessions
     "SessionManager",
     "SessionMetadata",
@@ -45,7 +40,12 @@ __all__ = [
     "apply_stealth",
     "apply_stealth_to_page",
     "build_stealth_script",
-    # Advanced (for custom implementations)
-    "CDPOverridesHandler",
-    "ChromeArgsBuilder",
+    "get_chrome_version",
+    "get_profile",
+    "list_available_profiles",
+    "list_profiles",
+    "load_profile_from_dict",
+    # Profile loaders
+    "load_profile_from_json",
+    "save_profile_to_json",
 ]
