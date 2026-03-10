@@ -1,53 +1,57 @@
 # nodriver-antidetect
 
-Antidetect browser на базе [nodriver](https://github.com/ultrafunkamsterdam/nodriver) с CDP-уровневым спуфингом fingerprint.
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Версия: 2.6.0**
+Antidetect browser based on [nodriver](https://github.com/ultrafunkamsterdam/nodriver) with CDP-level fingerprint spoofing.
 
-## Результаты CreepJS
+**Version: 2.6.0**
 
-| Метрика | Результат | Цель |
-|---------|-----------|------|
+## CreepJS Results
+
+| Metric | Result | Target |
+|--------|--------|--------|
 | like_headless | 31% | ≤31% ✅ |
 | headless | 0% | 0% ✅ |
 | stealth | 0% | 0% ✅ |
 | plugins | 5 | 5 ✅ |
 | mimeTypes | 2 | 2 ✅ |
 
-## Архитектура спуфинга
+## Spoofing Architecture
 
-**Принцип:** CDP-уровень где возможно, JS только для непокрываемого CDP.
+**Principle:** CDP-level where possible, JS only for what CDP doesn't support.
 
-| Уровень | Что спуфим | Метод |
-|---------|-----------|-------|
+| Layer | Spoofed | Method |
+|-------|---------|--------|
 | HTTP | User-Agent, Client Hints | `Network.setUserAgentOverride` |
 | Browser | Timezone, Locale | `Emulation.setTimezone/LocaleOverride` |
 | Chrome flags | Window size, Language | `--window-size`, `--lang` |
 | JS | Plugins, WebGL, Canvas | Stealth script |
 
-### Динамический User-Agent
+### Dynamic User-Agent
 
-User-Agent генерируется **автоматически** на основе реальной версии установленного Chrome:
+User-Agent is generated **automatically** based on the installed Chrome version:
 
 ```
-Реальный Chrome: 144.0.7559.59
-           ↓
+Real Chrome: 144.0.7559.59
+       ↓
 User-Agent: Mozilla/5.0 ... Chrome/144.0.7559.59 Safari/537.36
 Client Hints: brands=[Chrome/144, ...]
 ```
 
-Это обеспечивает соответствие между UA и реальным браузером даже после обновления Chrome.
+This ensures consistency between UA and the real browser even after Chrome updates.
 
 ## Quick Start
 
-### Локально (без Docker)
+### Locally (without Docker)
 
 ```python
 import asyncio
 from antidetect import AntidetectBrowser
 
 async def main():
-    # По умолчанию sandbox=True — нет жёлтой полосы
+    # By default sandbox=True (no yellow banner)
     async with AntidetectBrowser() as browser:
         page = await browser.get("https://example.com")
         await browser.screenshot("screenshot.png")
@@ -58,7 +62,7 @@ asyncio.run(main())
 ### Docker
 
 ```python
-# В Docker нужен sandbox=False
+# In Docker use sandbox=False
 async with AntidetectBrowser(sandbox=False) as browser:
     page = await browser.get("https://example.com")
 ```
@@ -71,40 +75,40 @@ docker build -t nodriver-antidetect .
 docker run --rm -v $(pwd)/output:/output nodriver-antidetect
 ```
 
-### С JSON профилем
+### With JSON Profile
 
 ```python
-# Загрузка профиля по имени
+# Load profile by name
 async with AntidetectBrowser(profile="windows_chrome") as browser:
     ...
 
-# Загрузка из файла
+# Load from file
 async with AntidetectBrowser(profile="profiles/custom.json") as browser:
     ...
 ```
 
-### С сессией (persistent cookies/localStorage)
+### With Session (persistent cookies/localStorage)
 
 ```python
-# Сессия сохраняет cookies, localStorage, cache между запусками
+# Session persists cookies, localStorage, cache between runs
 async with AntidetectBrowser(session="my_session") as browser:
     page = await browser.get("https://example.com/login")
     # ... login ...
-    # Cookies автоматически сохранятся в ./sessions/my_session/
+    # Cookies are automatically saved to ./sessions/my_session/
 
-# При следующем запуске — уже залогинены!
+# Next run will already be logged in!
 async with AntidetectBrowser(session="my_session") as browser:
     page = await browser.get("https://example.com")
 ```
 
-### С расширениями Chrome
+### With Chrome Extensions
 
 ```python
-# Загрузка распакованного расширения
+# Load unpacked extension
 async with AntidetectBrowser(extensions=["./extensions/ublock"]) as browser:
     page = await browser.get("https://example.com")
 
-# Несколько расширений
+# Multiple extensions
 async with AntidetectBrowser(
     extensions=[
         "./extensions/ublock",
@@ -114,36 +118,36 @@ async with AntidetectBrowser(
     ...
 ```
 
-**Требования к расширениям:**
-- Расширение должно быть распаковано (папка с `manifest.json`)
-- Поддерживаются Manifest V2 и V3
+**Extension requirements:**
+- Extension must be unpacked (folder with `manifest.json`)
+- Supports Manifest V2 and V3
 
-### SessionManager (продвинутое управление)
+### SessionManager (advanced management)
 
 ```python
 from antidetect import SessionManager
 
 manager = SessionManager()
 
-# Список сессий
+# List sessions
 sessions = manager.list()
 
-# Клонировать сессию
+# Clone session
 manager.clone("session1", "session1_backup")
 
-# Удалить сессию
+# Delete session
 manager.delete("old_session")
 ```
 
-## Профили
+## Profiles
 
-Профили хранятся в `profiles/*.json`:
+Profiles are stored in `profiles/*.json`:
 
-- `mazamaka_local.json` — профиль по умолчанию (Linux, Chrome 144)
+- `mazamaka_local.json` — default profile (Linux, Chrome 144)
 - `windows_chrome.json` — Windows 10 + Chrome
 - `macos_chrome.json` — macOS + Chrome
 
-### Структура профиля
+### Profile Structure
 
 ```json
 {
@@ -179,56 +183,56 @@ manager.delete("old_session")
 
 ```python
 AntidetectBrowser(
-    profile: str | FingerprintProfile | None = None,  # Fingerprint профиль
+    profile: str | FingerprintProfile | None = None,  # Fingerprint profile
     proxy: str | None = None,                          # Proxy URL
-    headless: bool = False,                            # Headless режим
-    sandbox: bool = True,                              # False для Docker
-    session: str | None = None,                        # Имя сессии для persistence
-    sessions_dir: str | Path | None = None,            # Директория сессий (default: ./sessions)
-    browser_args: list[str] | None = None,             # Доп. аргументы Chrome
-    extensions: list[str | Path] | None = None,        # Пути к расширениям Chrome
+    headless: bool = False,                            # Headless mode
+    sandbox: bool = True,                              # False for Docker
+    session: str | None = None,                        # Session name for persistence
+    sessions_dir: str | Path | None = None,            # Sessions directory (default: ./sessions)
+    browser_args: list[str] | None = None,             # Additional Chrome arguments
+    extensions: list[str | Path] | None = None,        # Chrome extension paths
 )
 ```
 
-### Методы
+### Methods
 
 ```python
 async with AntidetectBrowser() as browser:
-    # Навигация
+    # Navigation
     page = await browser.get("https://example.com")
 
-    # Новая вкладка
+    # New tab
     page2 = await browser.get("https://other.com", new_tab=True)
 
-    # Скриншот
+    # Screenshot
     await browser.screenshot("/path/to/screenshot.png")
 
-    # Ожидание
+    # Wait
     await browser.wait(5)
 ```
 
-## Конфигурация через ENV
+## Environment Configuration
 
-| Переменная | Default | Описание |
-|------------|---------|----------|
-| `AD_PROFILE_PATH` | `profiles/mazamaka_local.json` | Путь к JSON профилю |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AD_PROFILE_PATH` | `profiles/mazamaka_local.json` | Path to JSON profile |
 | `AD_TIMEZONE` | `Europe/Budapest` | Timezone |
 | `AD_LOCALE` | `ru` | Locale |
-| `AD_SCREEN_WIDTH` | `1920` | Ширина экрана |
-| `AD_SCREEN_HEIGHT` | `1080` | Высота экрана |
-| `AD_HEADLESS` | `false` | Headless режим |
+| `AD_SCREEN_WIDTH` | `1920` | Screen width |
+| `AD_SCREEN_HEIGHT` | `1080` | Screen height |
+| `AD_HEADLESS` | `false` | Headless mode |
 | `PROXY_URL` | - | Proxy URL |
 
-## Что спуфится
+## What Gets Spoofed
 
-### Через CDP (надёжно, на уровне браузера)
+### Via CDP (reliable, browser-level)
 - User-Agent + Client Hints (Sec-CH-UA-*)
 - Timezone
 - Locale
 
-### Через JS (для того что CDP не поддерживает)
+### Via JS (for what CDP doesn't support)
 - `navigator.plugins` / `mimeTypes`
-- `navigator.webdriver` → удаляется
+- `navigator.webdriver` → removed
 - `window.screen.*`
 - WebGL vendor/renderer
 - Canvas noise
@@ -237,47 +241,47 @@ async with AntidetectBrowser() as browser:
 - Network Information API
 - Permissions API
 
-### Через Chrome flags
+### Via Chrome flags
 - `--disable-blink-features=AutomationControlled`
 - `--window-size`
 - `--lang`
 
-## Тестирование fingerprint
+## Fingerprint Testing
 
 - [CreepJS](https://abrahamjuliot.github.io/creepjs/) — основной тест
 - [BrowserLeaks](https://browserleaks.com/)
 - [Bot Detector](https://bot.sannysoft.com/)
 - [Pixelscan](https://pixelscan.net/)
 
-## Известные ограничения
+## Known Limitations
 
-1. **WebRTC** — локальные IP скрыты, но STUN/TURN могут раскрыть реальный IP. Используйте proxy.
+1. **WebRTC** — Local IPs are hidden, but STUN/TURN may leak the real IP. Use proxy.
 
-2. **Canvas/Audio noise** — минимальный шум для уникальности fingerprint, не влияет на детект.
+2. **Canvas/Audio noise** — Minimal noise for fingerprint uniqueness, doesn't affect detection.
 
-3. **GPU в Docker** — WebGL работает через software renderer, может отличаться от реального GPU.
+3. **GPU in Docker** — WebGL works through software renderer, may differ from real GPU.
 
-4. **`sandbox=False`** — показывает жёлтую полосу "неподдерживаемый флаг". Используйте только в Docker.
+4. **`sandbox=False`** — Shows yellow banner "unsupported flag". Use only in Docker.
 
-## Структура проекта
+## Project Structure
 
 ```
 nodriver-antidetect/
 ├── antidetect/
-│   ├── __init__.py      # Публичный API
+│   ├── __init__.py      # Public API
 │   ├── browser.py       # AntidetectBrowser + CDP overrides
-│   ├── config.py        # Pydantic модели
-│   ├── session.py       # SessionManager для persistence
+│   ├── config.py        # Pydantic models
+│   ├── session.py       # SessionManager for persistence
 │   ├── stealth.py       # JS stealth script
 │   └── profiles/
-│       └── loader.py    # Загрузка JSON профилей
-├── profiles/            # JSON профили fingerprint
-├── sessions/            # Данные сессий (cookies, localStorage)
+│       └── loader.py    # Load JSON profiles
+├── profiles/            # JSON fingerprint profiles
+├── sessions/            # Session data (cookies, localStorage)
 ├── examples/
 │   ├── basic_usage.py
 │   ├── session_example.py
 │   └── test_fingerprint.py
-├── CLAUDE.md            # Контекст для AI-агентов
+├── CLAUDE.md            # AI agent context
 └── README.md
 ```
 
@@ -289,3 +293,8 @@ MIT
 
 - [nodriver](https://github.com/ultrafunkamsterdam/nodriver) — async Chrome automation
 - [CreepJS](https://github.com/AbrahamJuliot/creepjs) — fingerprint testing
+
+## Links
+
+- **GitHub**: [mazamaka/nodriver-antidetect](https://github.com/mazamaka/nodriver-antidetect)
+- **Documentation**: See [CLAUDE.md](./CLAUDE.md) for development details
