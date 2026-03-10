@@ -67,3 +67,4 @@ Thumbs.db
 config.json
 fingerprints/
 scripts/
+output_*/
