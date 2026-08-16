@@ -1,6 +1,26 @@
+<div align="center">
+
 # nodriver-antidetect
 
-Antidetect wrapper around [nodriver](https://github.com/ultrafunkamsterdam/nodriver): fingerprint spoofing at the CDP level, with JS injection reserved for what CDP cannot reach.
+**CDP-level fingerprint spoofing for undetectable browser automation**
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-D7FF64.svg)](https://github.com/astral-sh/ruff)
+[![Typing: mypy](https://img.shields.io/badge/typing-mypy-blue.svg)](https://mypy-lang.org/)
+[![Docker](https://img.shields.io/badge/docker-ready-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
+
+Antidetect wrapper around [nodriver](https://github.com/ultrafunkamsterdam/nodriver): fingerprint spoofing at the **Chrome DevTools Protocol level**, with JS injection reserved for what CDP cannot reach.
+
+[Benchmark](#benchmark-results) ·
+[Architecture](#spoofing-architecture) ·
+[Quick Start](#quick-start) ·
+[API](#api) ·
+[Limitations](#known-limitations)
+
+</div>
+
+---
 
 **Version 2.7.0** · verified 2026-08-16 on Chrome 151.0.7922.138 + nodriver 0.50.3
 
@@ -75,6 +95,12 @@ python tools/benchmark.py --profile windows_chrome --output docs
 ```
 
 Probes: `headers` (a local HTTP server captures what Chrome really sends), `js` (properties in the page and inside a Worker), `sannysoft`, `creepjs`, `pixelscan`. The report lands in `<output>/benchmark.md`, screenshots in `<output>/img/`.
+
+Unit tests (config, profiles, stealth assembly, sessions, Chrome args):
+
+```bash
+pytest
+```
 
 ## Spoofing architecture
 
@@ -292,6 +318,8 @@ nodriver-antidetect/
 ├── tools/benchmark.py   # baseline vs antidetect measurements + screenshots
 ├── docs/                # latest report and screenshots
 ├── examples/
+├── tests/               # unit tests (pytest)
+├── pyproject.toml       # packaging, ruff, mypy, pytest config
 ├── CLAUDE.md            # context for AI agents
 └── README.md
 ```
