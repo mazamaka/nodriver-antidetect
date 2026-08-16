@@ -2,8 +2,8 @@
 Stealth fingerprint injection for nodriver.
 
 Key principles:
-1. CDP-level first: Use CDP for what it supports (UA, timezone, locale)
-2. JS injection only for what CDP can't do (WebGL, plugins, canvas)
+1. CDP-level first: it spoofs natively, leaving prototypes untouched
+2. JS injection only for what CDP has no API for (WebGL, plugins, canvas)
 3. Preserve native behavior: toString, prototype chain, instanceof
 4. No debug markers, no detectable patterns
 """
@@ -21,12 +21,7 @@ from .js import load_js
 
 if TYPE_CHECKING:
     import nodriver as uc
-
     from .config import FingerprintProfile
-
-
-# Browser chrome height (toolbar, tabs, etc.)
-from .constants import BROWSER_CHROME_HEIGHT
 
 
 def _generate_plugins_config() -> list[dict]:
@@ -38,11 +33,7 @@ def _generate_plugins_config() -> list[dict]:
             "description": "Portable Document Format",
             "filename": "internal-pdf-viewer",
             "mimeTypes": [
-                {
-                    "type": "application/pdf",
-                    "suffixes": "pdf",
-                    "description": "Portable Document Format",
-                },
+                {"type": "application/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
                 {"type": "text/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
             ],
         },
@@ -51,11 +42,7 @@ def _generate_plugins_config() -> list[dict]:
             "description": "Portable Document Format",
             "filename": "internal-pdf-viewer",
             "mimeTypes": [
-                {
-                    "type": "application/pdf",
-                    "suffixes": "pdf",
-                    "description": "Portable Document Format",
-                },
+                {"type": "application/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
                 {"type": "text/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
             ],
         },
@@ -64,11 +51,7 @@ def _generate_plugins_config() -> list[dict]:
             "description": "Portable Document Format",
             "filename": "internal-pdf-viewer",
             "mimeTypes": [
-                {
-                    "type": "application/pdf",
-                    "suffixes": "pdf",
-                    "description": "Portable Document Format",
-                },
+                {"type": "application/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
                 {"type": "text/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
             ],
         },
@@ -77,11 +60,7 @@ def _generate_plugins_config() -> list[dict]:
             "description": "Portable Document Format",
             "filename": "internal-pdf-viewer",
             "mimeTypes": [
-                {
-                    "type": "application/pdf",
-                    "suffixes": "pdf",
-                    "description": "Portable Document Format",
-                },
+                {"type": "application/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
                 {"type": "text/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
             ],
         },
@@ -90,18 +69,14 @@ def _generate_plugins_config() -> list[dict]:
             "description": "Portable Document Format",
             "filename": "internal-pdf-viewer",
             "mimeTypes": [
-                {
-                    "type": "application/pdf",
-                    "suffixes": "pdf",
-                    "description": "Portable Document Format",
-                },
+                {"type": "application/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
                 {"type": "text/pdf", "suffixes": "pdf", "description": "Portable Document Format"},
             ],
         },
     ]
 
 
-def _build_config(profile: FingerprintProfile) -> dict:
+def _build_config(profile: "FingerprintProfile") -> dict:
     """Build configuration object for stealth script."""
     scr = profile.screen
     wgl = profile.webgl
@@ -110,40 +85,26 @@ def _build_config(profile: FingerprintProfile) -> dict:
 
     # Generate fake device list (empty labels = no permission granted, realistic)
     devices = []
-    for kind, count in [
-        ("audioinput", media.audio_inputs),
-        ("audiooutput", media.audio_outputs),
-        ("videoinput", media.video_inputs),
-    ]:
+    for kind, count in [("audioinput", media.audio_inputs),
+                        ("audiooutput", media.audio_outputs),
+                        ("videoinput", media.video_inputs)]:
         for _ in range(count):
-            devices.append(
-                {
-                    "deviceId": secrets.token_hex(32),
-                    "kind": kind,
-                    "label": "",  # Empty until getUserMedia permission
-                    "groupId": secrets.token_hex(32),
-                }
-            )
+            devices.append({
+                "deviceId": secrets.token_hex(32),
+                "kind": kind,
+                "label": "",  # Empty until getUserMedia permission
+                "groupId": secrets.token_hex(32),
+            })
 
     return {
-        # Screen (CDP setDeviceMetricsOverride is detectable, so we use JS)
+        # Screen: only the available area (CDP covers width/height)
         "screen": {
-            "width": scr.width,
-            "height": scr.height,
             "availWidth": scr.avail_width,
             "availHeight": scr.avail_height,
-            "colorDepth": scr.color_depth,
-            "pixelDepth": scr.pixel_depth,
-        },
-        "window": {
-            "devicePixelRatio": scr.device_pixel_ratio,
-            "innerWidth": scr.avail_width,
-            "innerHeight": scr.avail_height - BROWSER_CHROME_HEIGHT,
-            "outerWidth": scr.width,
-            "outerHeight": scr.height,
         },
         # WebGL (CDP cannot spoof)
         "webgl": {
+            "mode": wgl.mode,
             "vendor": wgl.vendor,
             "renderer": wgl.renderer,
         },
@@ -158,20 +119,22 @@ def _build_config(profile: FingerprintProfile) -> dict:
         },
         # Plugins (CDP cannot spoof)
         "plugins": _generate_plugins_config(),
-        # Navigator properties (doNotTrack)
-        # Note: WebGPU disabled via Chrome flags, not JS
+        # Navigator properties CDP cannot override
+        # (UA, platform and languages come from Network.setUserAgentOverride)
         "navigator": {
             "doNotTrack": nav.do_not_track,
+            "deviceMemory": nav.device_memory,
         },
     }
 
 
-def build_stealth_script(profile: FingerprintProfile) -> str:
+def build_stealth_script(profile: "FingerprintProfile") -> str:
     """
     Build stealth script for things CDP cannot do.
 
-    NOTE: UA, timezone, locale are handled by CDP in browser.py
-    This script only handles: WebGL, plugins, screen, canvas, media devices, etc.
+    NOTE: UA, Client Hints, timezone, locale, screen.* and hardwareConcurrency
+    are handled by the CDP layer (cdp_handler.py). This script only covers what
+    CDP has no API for: WebGL, plugins, canvas noise, media devices.
 
     JS modules are loaded from antidetect/js/ directory for better maintainability.
     """
@@ -223,7 +186,7 @@ const C = {json.dumps(config)};
 }})();"""
 
 
-async def apply_stealth(browser: uc.Browser, profile: FingerprintProfile) -> None:
+async def apply_stealth(browser: "uc.Browser", profile: "FingerprintProfile") -> None:
     """
     Register stealth script for all pages in this browser.
 
@@ -250,7 +213,7 @@ async def apply_stealth(browser: uc.Browser, profile: FingerprintProfile) -> Non
         logger.warning(f"Stealth injection failed: {e}")
 
 
-async def apply_stealth_to_page(page: uc.Tab, profile: FingerprintProfile) -> None:
+async def apply_stealth_to_page(page: "uc.Tab", profile: "FingerprintProfile") -> None:
     """Inject stealth script into page context (fallback method)."""
     script = build_stealth_script(profile)
     try:

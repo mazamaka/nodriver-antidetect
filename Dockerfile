@@ -35,7 +35,6 @@ ENV AD_HARDWARE_CONCURRENCY=12
 ENV AD_PLATFORM="Linux x86_64"
 ENV AD_WEBGL_VENDOR="Google Inc. (NVIDIA Corporation)"
 ENV AD_WEBGL_RENDERER="ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)"
-ENV AD_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
 ENV AD_LANGUAGES="ru,en-US,en,uk"
 
 # Profile settings - load fingerprint from JSON file
@@ -127,13 +126,13 @@ COPY antidetect/ ./antidetect/
 # Copy JSON fingerprint profiles
 COPY profiles/ ./profiles/
 
-# Copy examples
+# Copy examples and tools
 COPY examples/ ./examples/
+COPY tools/ ./tools/
 
 # Copy entrypoint and utilities
 COPY entrypoint.sh /entrypoint.sh
-COPY scripts/ ./scripts/
-RUN chmod +x /entrypoint.sh ./scripts/*.sh 2>/dev/null || true
+RUN chmod +x /entrypoint.sh
 
 # Switch to non-root user
 USER browser

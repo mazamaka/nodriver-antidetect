@@ -13,13 +13,16 @@ from antidetect import AntidetectBrowser, FingerprintProfile, get_profile, list_
 from antidetect.config import NavigatorConfig, ScreenConfig, TimezoneConfig
 from loguru import logger
 
+# /output inside Docker, ./output locally
+OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/output" if os.path.isdir("/output") else "output")
+
 
 async def basic_example() -> None:
     """Basic usage with default settings."""
     async with AntidetectBrowser() as browser:
         page = await browser.get("https://httpbin.org/headers")
         await asyncio.sleep(2)
-        await browser.screenshot("/output/basic_example.png")
+        await browser.screenshot(f"{OUTPUT_DIR}/basic_example.png")
         logger.info("Basic example completed!")
 
 
@@ -49,7 +52,7 @@ async def custom_profile_example() -> None:
     async with AntidetectBrowser(profile=profile) as browser:
         page = await browser.get("https://www.whatismybrowser.com/")
         await asyncio.sleep(3)
-        await browser.screenshot("/output/custom_profile.png")
+        await browser.screenshot(f"{OUTPUT_DIR}/custom_profile.png")
         logger.info("Custom profile example completed!")
 
 
@@ -64,7 +67,7 @@ async def json_profile_example() -> None:
     async with AntidetectBrowser(profile="windows_chrome") as browser:
         page = await browser.get("https://bot.sannysoft.com/")
         await asyncio.sleep(5)
-        await browser.screenshot("/output/windows_chrome.png")
+        await browser.screenshot(f"{OUTPUT_DIR}/windows_chrome.png")
         logger.info("JSON profile example completed!")
 
 
@@ -79,13 +82,13 @@ async def proxy_example() -> None:
     async with AntidetectBrowser(proxy=proxy_url) as browser:
         page = await browser.get("https://httpbin.org/ip")
         await asyncio.sleep(2)
-        await browser.screenshot("/output/proxy_example.png")
+        await browser.screenshot(f"{OUTPUT_DIR}/proxy_example.png")
         logger.info("Proxy example completed!")
 
 
 async def main() -> None:
     """Run all examples."""
-    os.makedirs("/output", exist_ok=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     await basic_example()
     await custom_profile_example()

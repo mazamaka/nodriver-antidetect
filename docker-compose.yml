@@ -43,7 +43,7 @@ services:
       - ./examples:/app/examples:ro
 
     # Keep container running for testing
-    command: ["python", "/app/examples/test_fingerprint.py", "--output", "/output"]
+    command: ["python", "/app/tools/benchmark.py", "--setups", "antidetect", "--output", "/output"]
 
     # Memory limit
     deploy:
@@ -89,7 +89,7 @@ services:
       - ./output:/output
       - ./examples:/app/examples:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-    command: ["python", "/app/examples/test_fingerprint.py", "--output", "/output"]
+    command: ["python", "/app/tools/benchmark.py", "--setups", "antidetect", "--output", "/output"]
     deploy:
       resources:
         limits:
@@ -128,7 +128,7 @@ services:
     volumes:
       - ./output:/output
       - ./examples:/app/examples:ro
-    command: ["python", "/app/examples/test_fingerprint.py", "--output", "/output"]
+    command: ["python", "/app/tools/benchmark.py", "--setups", "antidetect", "--output", "/output"]
     deploy:
       resources:
         limits:
@@ -169,7 +169,7 @@ services:
     volumes:
       - ./output:/output
       - ./examples:/app/examples:ro
-    command: ["python", "/app/examples/test_fingerprint.py", "--output", "/output"]
+    command: ["python", "/app/tools/benchmark.py", "--setups", "antidetect", "--output", "/output"]
     deploy:
       resources:
         limits:
@@ -220,7 +220,7 @@ services:
     volumes:
       - ./output:/output
       - ./examples:/app/examples:ro
-    command: ["python", "/app/examples/test_fingerprint_fast.py", "--output", "/output"]
+    command: ["python", "/app/tools/benchmark.py", "--setups", "antidetect", "--output", "/output"]
     deploy:
       resources:
         limits:

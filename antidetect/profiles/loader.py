@@ -115,6 +115,7 @@ def _parse_profile(data: dict[str, Any], name: str) -> FingerprintProfile:
     vendor = _get(wgl, "vendor", default=wgl_def.vendor)
     renderer = _get(wgl, "renderer", default=wgl_def.renderer)
     webgl = WebGLConfig(
+        mode=_get(wgl, "mode", default=wgl_def.mode),
         vendor=vendor,
         renderer=renderer,
         unmasked_vendor=_get(wgl, "unmasked_vendor", default=vendor),

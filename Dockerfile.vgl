@@ -76,6 +76,7 @@ RUN python3.12 -m pip install --no-cache-dir -r requirements.txt
 COPY antidetect/ ./antidetect/
 COPY profiles/ ./profiles/
 COPY examples/ ./examples/
+COPY tools/ ./tools/
 
 # Copy VirtualGL entrypoint
 COPY entrypoint-vgl.sh /entrypoint-vgl.sh

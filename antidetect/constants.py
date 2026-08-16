@@ -6,7 +6,7 @@ Centralized constants to avoid magic numbers throughout the codebase.
 # =============================================================================
 # Chrome defaults
 # =============================================================================
-DEFAULT_CHROME_VERSION = "132.0.6834.83"
+DEFAULT_CHROME_VERSION = "151.0.7922.138"
 
 # =============================================================================
 # WebGL parameter codes (from WebGL spec)
@@ -24,10 +24,6 @@ DEFAULT_SCREEN_HEIGHT = 1080
 DEFAULT_COLOR_DEPTH = 24
 DEFAULT_PIXEL_DEPTH = 24
 DEFAULT_DEVICE_PIXEL_RATIO = 1.0
-
-# Browser chrome height (toolbar, tabs, address bar)
-# Used to calculate innerHeight = availHeight - BROWSER_CHROME_HEIGHT
-BROWSER_CHROME_HEIGHT = 40
 
 # =============================================================================
 # Canvas noise

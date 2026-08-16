@@ -47,6 +47,8 @@ sessions/
 *.png
 *.jpg
 *.jpeg
+# ...except the benchmark screenshots used in README
+!docs/img/*.png
 
 # Logs
 *.log

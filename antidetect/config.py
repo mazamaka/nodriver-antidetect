@@ -13,6 +13,8 @@ from loguru import logger
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
+from .constants import DEFAULT_CHROME_VERSION
+
 # === Chrome Version Detection ===
 
 
@@ -21,10 +23,9 @@ def get_chrome_version() -> str:
     """
     Detect installed Chrome version.
 
-    Returns version string like "132.0.6834.83" or default if not found.
+    Returns version string like "151.0.7922.138" or default if not found.
     """
-    # Default fallback version
-    default_version = "132.0.6834.83"
+    default_version = DEFAULT_CHROME_VERSION
 
     # Try common Chrome paths
     chrome_paths = [
@@ -136,8 +137,18 @@ def get_timezone_offset(timezone: str) -> int:
 
 
 class WebGLConfig(BaseModel):
-    """WebGL fingerprint configuration."""
+    """WebGL fingerprint configuration.
 
+    mode:
+        auto   - spoof only when the real renderer is a software one
+                 (SwiftShader/llvmpipe/Mesa), i.e. the headless giveaway.
+                 On a machine with a real GPU the patched getParameter costs
+                 more than it hides (measured: CreepJS stealth 0% -> 20%).
+        always - always spoof vendor/renderer
+        off    - never touch WebGL
+    """
+
+    mode: str = "auto"
     vendor: str = "Google Inc. (NVIDIA Corporation)"
     renderer: str = "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)"
     unmasked_vendor: str = "Google Inc. (NVIDIA Corporation)"

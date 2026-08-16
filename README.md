@@ -1,421 +1,306 @@
-<div align="center">
-
 # nodriver-antidetect
 
-**CDP-level fingerprint spoofing for undetectable browser automation**
+Antidetect wrapper around [nodriver](https://github.com/ultrafunkamsterdam/nodriver): fingerprint spoofing at the CDP level, with JS injection reserved for what CDP cannot reach.
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-D7FF64.svg)](https://github.com/astral-sh/ruff)
-[![Typing: mypy](https://img.shields.io/badge/typing-mypy-blue.svg)](https://mypy-lang.org/)
-[![Docker](https://img.shields.io/badge/docker-ready-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
+**Version 2.7.0** · verified 2026-08-16 on Chrome 151.0.7922.138 + nodriver 0.50.3
 
-Antidetect browser built on top of [nodriver](https://github.com/ultrafunkamsterdam/nodriver) that applies fingerprint spoofing at the **Chrome DevTools Protocol level** -- before any page JavaScript executes. Passes CreepJS, BrowserLeaks, Sannysoft, and Pixelscan with results indistinguishable from a real user browser.
+## Benchmark results
 
-[Quick Start](#quick-start) |
-[How It Works](#how-it-works) |
-[Features](#what-gets-spoofed) |
-[Docker](#docker) |
-[API](#api-reference)
+`tools/benchmark.py` runs two setups on the same machine: `baseline` — plain nodriver, `antidetect` — this wrapper with the `macos_chrome` profile. Full report: [docs/benchmark.md](docs/benchmark.md), raw data: [docs/benchmark.json](docs/benchmark.json).
 
-</div>
+Benchmark host: macOS 15 (Apple M2, 1470×956 display, TZ Europe/Prague, ru-RU locale).
 
----
+| What the page sees | baseline | antidetect | profile asks for |
+|---|---|---|---|
+| screen | 1470×956 | **2560×1440** | 2560×1440 |
+| hardwareConcurrency | 8 | **10** | 10 |
+| languages | ru-RU,ru,en-US,en | **en-US,en** | en-US,en |
+| timezone | Europe/Prague | **America/Los_Angeles** | America/Los_Angeles |
+| Accept-Language (HTTP) | ru-RU,ru;q=0.9,… | **en-US,en;q=0.9** | en-US,en |
+| navigator.webdriver | false | false | — |
 
-## Detection Test Results
+| Detector | baseline | antidetect |
+|---|---|---|
+| CreepJS: headless | 0% | 0% |
+| CreepJS: stealth | 0% | 0% |
+| CreepJS: like headless | 25% | 25% |
+| CreepJS: lies | 0 | 0 |
+| bot.sannysoft.com | 31 passed / 0 failed | 31 passed / 0 failed |
+| pixelscan.net bot check | human | human |
+| pixelscan.net flagged signals | none | none |
+| Browser startup | 1.23 s | 0.84 s |
 
-Tested against major fingerprint detection services:
+The point of these numbers: swapping the fingerprint costs **nothing** in detector scores. `like headless 25%` is what plain headful Chrome scores on the same host — it is not a defect of the wrapper.
 
-| Test Service | Metric | Result | Real Browser |
-|:-------------|:-------|:------:|:------------:|
-| **CreepJS** | like_headless | 31% | 31% |
-| **CreepJS** | headless | 0% | 0% |
-| **CreepJS** | stealth | 0% | 0% |
-| **CreepJS** | lies detected | 0 | 0 |
-| **Sannysoft** | all checks | PASS | PASS |
-| **BrowserLeaks** | WebGL confidence | HIGH | HIGH |
-| **Pixelscan** | bot detection | PASS | PASS |
+### pixelscan.net — bot check
 
-## How It Works
+![pixelscan bot detection test](docs/img/pixelscan-bot-antidetect.png)
 
-Traditional stealth libraries inject JavaScript overrides **after** page load, which is detectable by antifraud systems that check for prototype tampering, native function modifications, or timing discrepancies.
+`You're Definitely a Human`, and every signal group is `Clear` — Navigator (73 parameters), Webdriver (37), CDP (2), User Agent (5).
 
-`nodriver-antidetect` takes a fundamentally different approach:
+This is the check that forced the CDP-first design. With `screen`, `hardwareConcurrency` and `doNotTrack` patched in JS, pixelscan reported `Navigator: Detected` and `DoNotTrack: Detected`; moving them to the Emulation domain — and dropping the `doNotTrack` override that only ever restated the real value — cleared both.
 
-```
-                    +------------------+
-                    |  JSON Profile    |  Fingerprint configuration
-                    +--------+---------+
-                             |
-                    +--------v---------+
-                    | FingerprintProfile|  Pydantic validation
-                    +--------+---------+
-                             |
-              +--------------+--------------+
-              |                             |
-    +---------v----------+       +----------v---------+
-    |   CDP Overrides    |       |   JS Injection     |
-    |  (Browser-level)   |       |  (Page-level)      |
-    +--------------------+       +--------------------+
-    | User-Agent +       |       | WebGL vendor/      |
-    |   Client Hints     |       |   renderer         |
-    | Timezone           |       | Canvas noise       |
-    | Locale             |       | Plugins/MimeTypes  |
-    | Color scheme       |       | Screen dimensions  |
-    |                    |       | Media devices      |
-    |                    |       | Battery, Network   |
-    |                    |       | Permissions API    |
-    +--------------------+       +--------------------+
-              |                             |
-              +--+------ Applied BEFORE ----+--+
-                 |      page navigation        |
-                 v                             v
-         +--------------------------------------+
-         |          Page sees "real"            |
-         |        browser values from           |
-         |           the start                  |
-         +--------------------------------------+
-```
+### pixelscan.net — fingerprint report
 
-**Key principles:**
+![pixelscan fingerprint check](docs/img/pixelscan-fingerprint-antidetect.png)
 
-1. **CDP-first** -- User-Agent, Client Hints, timezone, and locale are set via Chrome DevTools Protocol (`Network.setUserAgentOverride`, `Emulation.setTimezoneOverride`). These operate at the HTTP header level, before any JavaScript runs.
+The HTTP and JavaScript User-Agents agree, the platform matches the profile, and `HardwareConcurency` reports the profile's 10 cores on an 8-core host — spoofed by the browser, not by a patched getter.
 
-2. **JS only for what CDP cannot do** -- WebGL parameters, plugins, canvas noise, and media devices require JavaScript, but the script is registered via `Page.addScriptToEvaluateOnNewDocument` so it runs before page code.
+### The profile reaches Worker contexts
 
-3. **Native function preservation** -- All overridden functions preserve their original `toString()` output and prototype chain, preventing lie detection through function signature analysis.
+CreepJS queries a Worker separately and compares its answers with the main thread — that is where half-applied spoofing shows up. Locale and timezone come from the profile, not from the host:
 
-4. **No detectable artifacts** -- Zero debug markers, no `__stealth_applied` flags, no modified prototype chains that CreepJS or similar tools can detect.
+![CreepJS Worker section](docs/img/creepjs-worker-antidetect.png)
 
-## What Gets Spoofed
+The GPU string here is the real one — see [Known limitations](#known-limitations).
 
-| Category | Properties | Method | Detection Risk |
-|:---------|:-----------|:------:|:--------------:|
-| **User-Agent** | UA string, Client Hints (Sec-CH-UA-*), appVersion | CDP | None |
-| **Timezone** | Intl.DateTimeFormat, getTimezoneOffset() | CDP | None |
-| **Locale** | navigator.language, Accept-Language header | CDP | None |
-| **Color Scheme** | prefers-color-scheme media query | CDP | None |
-| **WebGL** | UNMASKED_VENDOR/RENDERER, vendor, renderer | JS | Low |
-| **Canvas** | toDataURL(), getImageData() with deterministic noise | JS | Low |
-| **Audio** | AudioContext with session-stable noise | JS | Low |
-| **Screen** | width, height, availWidth, availHeight, colorDepth | JS | Low |
-| **Window** | devicePixelRatio, innerWidth, outerWidth | JS | Low |
-| **Plugins** | navigator.plugins (5 PDF viewers), mimeTypes | JS | Low |
-| **Navigator** | webdriver=false, pdfViewerEnabled, doNotTrack | JS | Low |
-| **Media** | enumerateDevices() with realistic device IDs | JS | Low |
-| **Battery** | getBattery() returns desktop values (charging, 100%) | JS | Low |
-| **Network** | navigator.connection (4g, wifi, 100ms RTT) | JS | Low |
-| **Permissions** | permissions.query() realistic responses | JS | Low |
-| **WebRTC** | Local IP hidden via iceTransportPolicy: relay | JS | Low |
-| **Automation** | cdc_*, __webdriver_*, __selenium_* markers removed | JS | None |
+### CreepJS verdict
 
-## Quick Start
+![CreepJS headless section](docs/img/creepjs-headless-antidetect.png)
 
-### Installation
+`0% headless`, `0% stealth` — no headless markers, and the API patches are not detected as stealth techniques.
+
+### bot.sannysoft.com
+
+![bot.sannysoft.com](docs/img/sannysoft-antidetect.png)
+
+Every test green. The table also shows the applied UA (Chrome 151), the profile languages, and a correct `PluginArray` type.
+
+### Reproduce it yourself
 
 ```bash
-git clone https://github.com/mazamaka/nodriver-antidetect.git
-cd nodriver-antidetect
-pip install -r requirements.txt
+python tools/benchmark.py                        # baseline + antidetect, all probes
+python tools/benchmark.py --setups antidetect --probes creepjs
+python tools/benchmark.py --profile windows_chrome --output docs
 ```
 
-### Basic Usage
+Probes: `headers` (a local HTTP server captures what Chrome really sends), `js` (properties in the page and inside a Worker), `sannysoft`, `creepjs`, `pixelscan`. The report lands in `<output>/benchmark.md`, screenshots in `<output>/img/`.
+
+## Spoofing architecture
+
+**Principle:** spoof through CDP wherever an API exists, fall back to JS only where it does not, and skip the override entirely when the real value already looks plausible.
+
+CDP overrides are performed by the browser itself: prototypes stay untouched, getters still report `[native code]`, and no own-properties appear on `navigator`. A JS patch, by contrast, is visible to anything that inspects property descriptors — pixelscan flags exactly that as `Navigator: Detected`.
+
+| Layer | What | How |
+|---|---|---|
+| CDP | User-Agent, Client Hints, Accept-Language | `Network.setUserAgentOverride` |
+| CDP | Timezone, locale (workers included) | `Emulation.setTimezone/LocaleOverride` |
+| CDP | `screen.width/height` | `Emulation.setDeviceMetricsOverride` (width/height/scale = 0, so the viewport is left alone) |
+| CDP | `hardwareConcurrency`, `maxTouchPoints` | `Emulation.setHardwareConcurrencyOverride`, `setTouchEmulationEnabled` |
+| Chrome flags | Window size, language, automation flags | `--window-size`, `--lang`, `--disable-blink-features` |
+| JS (no CDP API) | canvas noise, `deviceMemory`, `screen.avail*` | stealth script |
+| JS (conditional) | WebGL, plugins, mediaDevices, battery, connection, permissions | patched only when the real value is anomalous |
+
+### Dynamic User-Agent
+
+The UA is built from the version of the Chrome actually installed, so it never goes stale after a browser update:
+
+```
+Chrome 151.0.7922.138  →  UA: …Chrome/151.0.0.0 Safari/537.36   (UA reduction)
+                          Client Hints: full_version=151.0.7922.138
+```
+
+The GREASE brand (`"Not=A?Brand";v="99"`) is read from the browser itself instead of being hardcoded — a stale GREASE entry from an older Chrome gives the override away.
+
+### Conditional patches
+
+| Module | Steps in when |
+|---|---|
+| `webgl.js` | `mode: auto` — only if the real renderer is software (SwiftShader/llvmpipe/Mesa), i.e. it already screams headless. `always` / `off` to force it |
+| `plugins.js` | the real plugin list differs from the target one (old headless reports none) |
+| `media.js` | `enumerateDevices()` returns an empty list |
+| `battery.js` | `getBattery` is missing |
+| `network.js` | `navigator.connection` is missing |
+| `permissions.js` | `Notification.permission` and `permissions.query()` disagree |
+| `webdriver.js` | the flag is actually raised (normal Chrome already reports `false`) |
+| `navigator.js` | `deviceMemory`/`doNotTrack` differ from the profile — and always on `Navigator.prototype`, never as an own property on `navigator` |
+| `screen.js` | only `availWidth`/`availHeight`, which `setDeviceMetricsOverride` reports as equal to the screen size while a real desktop loses a strip to the menu bar |
+
+The measurement behind the `webgl` rule: on a machine with a real GPU, unconditionally patching `getParameter` pushed CreepJS stealth from 0% to 20% while hiding nothing — the real GPU still leaks through the Worker context.
+
+## Quick start
+
+### Local
 
 ```python
 import asyncio
 from antidetect import AntidetectBrowser
 
 async def main():
-    async with AntidetectBrowser() as browser:
-        page = await browser.get("https://abrahamjuliot.github.io/creepjs/")
-        await browser.wait(30)
-        await browser.screenshot("creepjs_result.png")
+    # sandbox=True by default — no yellow "unsupported flag" bar
+    async with AntidetectBrowser(profile="macos_chrome") as browser:
+        page = await browser.get("https://example.com")
+        await browser.screenshot("screenshot.png")
 
 asyncio.run(main())
 ```
 
-### With a Fingerprint Profile
+Pick a profile matching your host OS: a Linux profile on a macOS host is an inconsistency detectors can see.
+
+### Docker
 
 ```python
-# Load profile by name (from profiles/ directory)
-async with AntidetectBrowser(profile="windows_chrome") as browser:
-    page = await browser.get("https://example.com")
-
-# Load from JSON file
-async with AntidetectBrowser(profile="profiles/custom.json") as browser:
-    page = await browser.get("https://example.com")
-
-# Programmatic profile
-from antidetect import FingerprintProfile
-from antidetect.config import NavigatorConfig, ScreenConfig
-
-profile = FingerprintProfile(
-    name="custom",
-    navigator=NavigatorConfig(platform="Win32", hardware_concurrency=16),
-    screen=ScreenConfig(width=2560, height=1440),
-)
-async with AntidetectBrowser(profile=profile) as browser:
+async with AntidetectBrowser(sandbox=False) as browser:  # Docker needs sandbox=False
     page = await browser.get("https://example.com")
 ```
 
-### Persistent Sessions
+```bash
+docker build -t nodriver-antidetect .
+docker run --rm -v $(pwd)/output:/output nodriver-antidetect
+docker compose run --rm antidetect        # run the benchmark inside the container
+```
 
-Sessions preserve cookies, localStorage, and cache across browser restarts:
+### Sessions (persistent cookies/localStorage)
 
 ```python
-# First run -- login and save state
-async with AntidetectBrowser(session="my_account") as browser:
+async with AntidetectBrowser(session="my_session") as browser:
     page = await browser.get("https://example.com/login")
-    # ... perform login ...
-    # Cookies saved automatically to ./sessions/my_account/
+    # cookies are stored in ./sessions/my_session/
 
-# Next run -- already logged in
-async with AntidetectBrowser(session="my_account") as browser:
-    page = await browser.get("https://example.com/dashboard")
+async with AntidetectBrowser(session="my_session") as browser:
+    ...  # already logged in on the next run
 ```
-
-### With Proxy
-
-```python
-async with AntidetectBrowser(proxy="socks5://user:pass@host:port") as browser:
-    page = await browser.get("https://httpbin.org/ip")
-```
-
-## Docker
-
-### Standard (Xvfb, software rendering)
-
-```bash
-docker compose up antidetect
-```
-
-### GPU-accelerated (NVIDIA, real WebGL)
-
-```bash
-# Headless with real GPU (recommended for production)
-docker compose up antidetect-xorg
-
-# Web-accessible via noVNC (http://localhost:6080)
-docker compose up antidetect-novnc
-```
-
-| Docker Mode | GPU | WebGL Confidence | Requires |
-|:------------|:---:|:----------------:|:---------|
-| `antidetect` (Xvfb) | Software | LOW | Nothing |
-| `antidetect-gpu` (X11) | NVIDIA | HIGH | xhost, display |
-| `antidetect-xorg` | NVIDIA | HIGH | privileged |
-| `antidetect-novnc` | NVIDIA | HIGH | privileged |
-
-> **Warning:** Never use `AD_HEADLESS=true` -- Chrome's native headless mode is instantly detected by antifraud systems. Use Docker with a virtual display (Xvfb or Xorg) instead.
-
-## Fingerprint Profiles
-
-Profiles are JSON files in `profiles/`:
-
-| Profile | Platform | Screen | GPU |
-|:--------|:---------|:-------|:----|
-| `mazamaka_local` | Linux x86_64 | 3440x1440 | RTX 3060 |
-| `windows_chrome` | Win32 | 1920x1080 | RTX 3080 |
-| `macos_chrome` | MacIntel | 2560x1440 | M1 |
-
-### Profile Structure
-
-```json
-{
-  "name": "my_profile",
-  "navigator": {
-    "platform": "Linux x86_64",
-    "languages": ["en-US", "en"],
-    "hardware_concurrency": 8,
-    "device_memory": 8
-  },
-  "screen": {
-    "width": 1920, "height": 1080,
-    "avail_width": 1920, "avail_height": 1040
-  },
-  "webgl": {
-    "vendor": "Google Inc. (NVIDIA Corporation)",
-    "renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)"
-  },
-  "timezone": {
-    "timezone": "Europe/Berlin",
-    "locale": "en-US"
-  },
-  "canvas_noise": 0.00001,
-  "audio_noise": 0.00001
-}
-```
-
-User-Agent is **generated dynamically** from the installed Chrome version, ensuring consistency between the UA string and the real browser binary.
-
-## API Reference
-
-### AntidetectBrowser
-
-```python
-AntidetectBrowser(
-    profile: str | FingerprintProfile | None = None,  # Profile name, path, or object
-    config: AntidetectConfig | None = None,            # Environment-based config
-    proxy: str | None = None,                          # Proxy URL
-    headless: bool = False,                            # Headless mode (NOT recommended)
-    sandbox: bool = True,                              # Set False for Docker
-    session: str | None = None,                        # Session name for persistence
-    sessions_dir: str | Path | None = None,            # Sessions directory
-    browser_args: list[str] | None = None,             # Extra Chrome flags
-)
-```
-
-### Methods
-
-| Method | Description |
-|:-------|:-----------|
-| `await browser.get(url)` | Navigate to URL with stealth applied before load |
-| `await browser.get(url, new_tab=True)` | Open URL in new tab |
-| `await browser.new_tab(url)` | Open new tab |
-| `await browser.screenshot(path)` | Save screenshot |
-| `await browser.wait(seconds)` | Async sleep helper |
-| `await browser.stop()` | Graceful shutdown (auto on context exit) |
-
-### SessionManager
 
 ```python
 from antidetect import SessionManager
 
 manager = SessionManager()
-sessions = manager.list()                          # List all sessions
-manager.clone("session1", "session1_backup")       # Clone session
-manager.delete("old_session")                      # Delete session
-meta = manager.get_metadata("my_session")          # Get metadata
+manager.list()
+manager.clone("session1", "session1_backup")
+manager.delete("old_session")
 ```
 
-## Environment Variables
+### Proxy
+
+```python
+# no auth — passed straight to --proxy-server
+async with AntidetectBrowser(proxy="http://1.2.3.4:8080") as browser:
+    ...
+
+# with auth — nodriver's local forwarder holds the credentials,
+# so they never appear in Chrome's command line
+async with AntidetectBrowser(proxy="socks5://user:pass@1.2.3.4:1080") as browser:
+    ...
+```
+
+### Chrome extensions
+
+```python
+async with AntidetectBrowser(extensions=["./extensions/ublock"]) as browser:
+    ...
+```
+
+Extensions must be unpacked (a folder containing `manifest.json`). They are installed through the `Extensions.loadUnpacked` CDP domain rather than the `--load-extension` flag: current Chrome loads that flag unreliably and it conflicts with `--test-type`, whereas the CDP call installs and activates the extension for real (verified on Chrome 151 — a content script from a freshly loaded MV3 extension executes on the next navigation).
+
+## Profiles
+
+`profiles/*.json`:
+
+- `mazamaka_local.json` — Linux, NVIDIA RTX 3060 (default profile, aimed at Docker)
+- `windows_chrome.json` — Windows 10
+- `macos_chrome.json` — macOS, Apple M1 Pro
+
+```json
+{
+  "name": "my_profile",
+  "navigator": {
+    "platform": "MacIntel",
+    "languages": ["en-US", "en"],
+    "hardware_concurrency": 10,
+    "device_memory": 8
+  },
+  "screen": {"width": 2560, "height": 1440, "avail_width": 2560, "avail_height": 1415},
+  "webgl": {
+    "mode": "auto",
+    "vendor": "Google Inc. (Apple)",
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Version 14.0)"
+  },
+  "timezone": {"timezone": "America/Los_Angeles", "locale": "en-US"}
+}
+```
+
+No need to put `user_agent` in a profile: it is always generated from the installed Chrome version.
+
+## API
+
+```python
+AntidetectBrowser(
+    profile: str | FingerprintProfile | None = None,  # name, path to .json, or an object
+    config: AntidetectConfig | None = None,
+    proxy: str | None = None,                          # http/socks5, with or without auth
+    headless: bool = False,
+    browser_args: list[str] | None = None,
+    sandbox: bool = True,                              # False for Docker
+    session: str | None = None,
+    sessions_dir: str | Path | None = None,
+    extensions: list[str | Path] | None = None,
+)
+```
+
+```python
+async with AntidetectBrowser() as browser:
+    page = await browser.get("https://example.com")
+    page2 = await browser.get("https://other.com", new_tab=True)
+    await browser.screenshot("shot.png")
+    await browser.wait(5)
+```
+
+## Environment configuration
 
 | Variable | Default | Description |
-|:---------|:--------|:-----------|
-| `AD_PROFILE_PATH` | `profiles/mazamaka_local.json` | Path to JSON profile |
-| `AD_TIMEZONE` | `Europe/Budapest` | IANA timezone |
-| `AD_LOCALE` | `ru` | Browser locale |
-| `AD_SCREEN_WIDTH` | `1920` | Screen width |
-| `AD_SCREEN_HEIGHT` | `1080` | Screen height |
-| `AD_WEBGL_VENDOR` | Google Inc. (NVIDIA) | WebGL vendor string |
-| `AD_WEBGL_RENDERER` | ANGLE (NVIDIA...) | WebGL renderer string |
-| `AD_USER_AGENT` | *(auto-detected)* | Override User-Agent |
-| `AD_HEADLESS` | `false` | Headless mode |
-| `PROXY_URL` | - | Proxy URL |
+|---|---|---|
+| `AD_PROFILE_PATH` | `profiles/mazamaka_local.json` | JSON profile path (takes priority over the variables below) |
+| `AD_TIMEZONE` | `Europe/Budapest` | Timezone |
+| `AD_LOCALE` | `ru` | Locale |
+| `AD_SCREEN_WIDTH` / `AD_SCREEN_HEIGHT` | `1920` / `1080` | Screen |
+| `AD_HARDWARE_CONCURRENCY` / `AD_DEVICE_MEMORY` | `8` / `8` | Hardware |
+| `AD_PLATFORM` | `Linux x86_64` | Platform |
+| `AD_HEADLESS` | `false` | Headless mode (detectable — enable deliberately) |
+| `PROXY_URL` | — | Proxy URL |
 
-## Project Structure
+## Known limitations
+
+1. **WebGL is not spoofed inside Worker contexts.** `Page.addScriptToEvaluateOnNewDocument` does not reach workers, so with `webgl.mode: always` the renderer reported by the main thread and by a worker disagree — a louder lie than an honest GPU string. Hence `auto` as the default. The real fix is injecting into worker targets via `Target.setAutoAttach`.
+
+2. **`screen` is spoofed, `window.inner*` is not.** Window dimensions are cross-checked by CSS media queries (bot.sannysoft's MQ_SCREEN compares `innerWidth` against `matchMedia`), so window size is set with `--window-size` rather than faked in JS. A profile whose screen is larger than the host display is fine — the window is simply smaller than the screen.
+
+   `setDeviceMetricsOverride` has no notion of the available area and reports `avail* == screen`, which reads as unusual on a desktop (CreepJS: 25% → 31% like-headless). That one delta is patched in JS.
+
+3. **WebRTC** — local IPs are hidden, but STUN/TURN can still expose the real one. Use a proxy.
+
+4. **GPU in Docker** — WebGL runs on a software renderer; that is exactly the case where `webgl` in `auto` mode kicks in.
+
+5. **`sandbox=False`** shows the yellow "unsupported flag" bar — Docker only.
+
+6. **These numbers were measured on macOS.** Linux/Docker will differ (software rendering, different font set) — re-run `tools/benchmark.py` on your own platform.
+
+## Project layout
 
 ```
 nodriver-antidetect/
-├── antidetect/                # Core library
-│   ├── __init__.py            # Public API exports
-│   ├── browser.py             # AntidetectBrowser (async context manager)
-│   ├── cdp_handler.py         # CDP-level overrides (UA, timezone, locale)
-│   ├── chrome_args.py         # Stealth Chrome launch arguments
-│   ├── config.py              # Pydantic models, Chrome version detection
-│   ├── constants.py           # Centralized constants
-│   ├── session.py             # Session manager with file locking
-│   ├── stealth.py             # JS stealth script builder
-│   ├── py.typed               # PEP 561 typing marker
-│   ├── js/                    # Modular JavaScript injection scripts
-│   │   ├── utils.js           # wrapFn(), defineProperty() helpers
-│   │   ├── webdriver.js       # navigator.webdriver = false
-│   │   ├── plugins.js         # PluginArray with proper prototype chain
-│   │   ├── screen.js          # Screen dimensions override
-│   │   ├── webgl.js           # WebGL vendor/renderer spoofing
-│   │   ├── canvas.js          # Canvas noise (deterministic per session)
-│   │   ├── media.js           # MediaDevices enumeration
-│   │   ├── battery.js         # Battery API (desktop values)
-│   │   ├── network.js         # Network Information API
-│   │   ├── navigator.js       # doNotTrack, globalPrivacyControl
-│   │   ├── permissions.js     # Permissions API responses
-│   │   └── cleanup.js         # Remove automation markers
-│   └── profiles/
-│       ├── __init__.py        # Profile utilities, target metrics
-│       └── loader.py          # JSON profile load/save
-├── profiles/                  # JSON fingerprint profiles
-│   ├── mazamaka_local.json    # Linux + RTX 3060
-│   ├── windows_chrome.json    # Windows 10 + RTX 3080
-│   └── macos_chrome.json      # macOS + Apple GPU
-├── examples/                  # Usage examples
-│   ├── basic_usage.py         # Simple usage patterns
-│   ├── session_example.py     # Session management demo
-│   ├── test_fingerprint.py    # CreepJS + BrowserLeaks testing
-│   └── test_fingerprint_fast.py  # Optimized test with metric extraction
-├── tests/                     # Unit tests
-├── Dockerfile                 # Standard Docker (Xvfb)
-├── Dockerfile.xorg            # GPU Docker (Xorg + NVIDIA)
-├── Dockerfile.novnc           # GPU Docker with web VNC access
-├── docker-compose.yml         # All Docker configurations
-├── pyproject.toml             # Build config, ruff, mypy
-├── requirements.txt           # Python dependencies
-├── .env.example               # Environment variable template
-└── LICENSE                    # MIT License
+├── antidetect/
+│   ├── browser.py       # AntidetectBrowser: startup, proxy, extensions, sessions
+│   ├── cdp_handler.py   # CDP overrides: UA, Client Hints, timezone, locale
+│   ├── chrome_args.py   # Chrome flags
+│   ├── config.py        # pydantic models and env config
+│   ├── session.py       # SessionManager
+│   ├── stealth.py       # stealth script assembly
+│   ├── js/              # stealth JS modules
+│   └── profiles/loader.py
+├── profiles/            # JSON fingerprint profiles
+├── tools/benchmark.py   # baseline vs antidetect measurements + screenshots
+├── docs/                # latest report and screenshots
+├── examples/
+├── CLAUDE.md            # context for AI agents
+└── README.md
 ```
-
-## Verification
-
-Run the fingerprint test suite against detection services:
-
-```bash
-# Quick test (CreepJS only)
-python examples/test_fingerprint_fast.py --tests creepjs --output ./output
-
-# Full test suite
-python examples/test_fingerprint_fast.py --tests all --output ./output
-
-# Docker
-docker compose up antidetect
-```
-
-## Known Limitations
-
-| Limitation | Details | Mitigation |
-|:-----------|:--------|:-----------|
-| **TLS/JA3 fingerprint** | Inherited from Chrome binary, not spoofable | Use matching Chrome version |
-| **WebRTC IP leak** | STUN servers may reveal real IP | Use proxy with TURN relay |
-| **GPU in Docker** | Software renderer without NVIDIA setup | Use `antidetect-xorg` mode |
-| **Canvas noise** | Same seed per session (deterministic) | Different seed per profile |
-
-## Development
-
-```bash
-# Install dev dependencies
-pip install -e ".[dev]"
-
-# Run tests
-pytest tests/ -v
-
-# Lint
-ruff check antidetect/
-
-# Type check
-mypy antidetect/ --strict
-
-# Format
-ruff format antidetect/
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes with tests
-4. Ensure `ruff check` and `mypy --strict` pass
-5. Commit (`git commit -m 'feat: add amazing feature'`)
-6. Push and open a Pull Request
 
 ## License
 
-[MIT](LICENSE)
+MIT
 
-## Author
+## Credits
 
-**Maksym Babenko**
-- GitHub: [@mazamaka](https://github.com/mazamaka)
-- Telegram: [@Mazamaka](https://t.me/Mazamaka)
-
-## Acknowledgments
-
-- [nodriver](https://github.com/ultrafunkamsterdam/nodriver) -- async Chrome automation without detection
-- [CreepJS](https://github.com/AbrahamJuliot/creepjs) -- the gold standard for fingerprint analysis
+- [nodriver](https://github.com/ultrafunkamsterdam/nodriver) — async Chrome automation
+- [CreepJS](https://github.com/AbrahamJuliot/creepjs) and [bot.sannysoft.com](https://bot.sannysoft.com/) — test benches

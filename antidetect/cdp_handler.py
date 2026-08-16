@@ -6,6 +6,7 @@ These are applied BEFORE any page code runs, making them more reliable than JS i
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import nodriver.cdp as cdp
@@ -34,6 +35,9 @@ class CDPOverridesHandler:
             profile: FingerprintProfile with spoofing values
         """
         self.profile = profile
+        # Targets where the stealth script is already registered.
+        # Re-registering would run the script once per registration on every load.
+        self._registered: set[str] = set()
 
     async def apply(self, page: uc.Tab) -> None:
         """Apply all CDP overrides to a page.
@@ -47,6 +51,14 @@ class CDPOverridesHandler:
         await self._apply_timezone(page)
         await self._apply_locale(page)
         await self._apply_color_scheme(page)
+        await self._apply_device_metrics(page)
+        await self._apply_hardware(page)
+        await self._apply_stealth_script(page)
+
+    async def ensure_registered(self, page: uc.Tab) -> None:
+        """Register the stealth script on a tab unless it already is."""
+        if str(page.target.target_id) in self._registered:
+            return
         await self._apply_stealth_script(page)
 
     async def _enable_page_domain(self, page: uc.Tab) -> None:
@@ -68,7 +80,8 @@ class CDPOverridesHandler:
             # userAgent string uses reduced version (144.0.0.0)
             # but userAgentData shows full version (144.0.7559.59)
             full_chrome_version = get_chrome_version()
-            major_version = full_chrome_version.split(".")[0] if full_chrome_version else "144"
+            major_version = full_chrome_version.split(".")[0]
+            brands = await self._brand_list(page, major_version)
 
             await page.send(
                 cdp.network.set_user_agent_override(
@@ -82,24 +95,15 @@ class CDPOverridesHandler:
                         model="",
                         mobile=False,
                         brands=[
-                            cdp.emulation.UserAgentBrandVersion(
-                                brand="Chromium", version=major_version
-                            ),
-                            cdp.emulation.UserAgentBrandVersion(
-                                brand="Google Chrome", version=major_version
-                            ),
-                            cdp.emulation.UserAgentBrandVersion(brand="Not-A.Brand", version="24"),
+                            cdp.emulation.UserAgentBrandVersion(brand=brand, version=version)
+                            for brand, version in brands
                         ],
                         full_version_list=[
                             cdp.emulation.UserAgentBrandVersion(
-                                brand="Chromium", version=full_chrome_version
-                            ),
-                            cdp.emulation.UserAgentBrandVersion(
-                                brand="Google Chrome", version=full_chrome_version
-                            ),
-                            cdp.emulation.UserAgentBrandVersion(
-                                brand="Not-A.Brand", version="24.0.0.0"
-                            ),
+                                brand=brand,
+                                version=full_chrome_version if version == major_version else f"{version}.0.0.0",
+                            )
+                            for brand, version in brands
                         ],
                         full_version=full_chrome_version,
                         bitness="64" if "64" in nav.platform else "32",
@@ -110,6 +114,31 @@ class CDPOverridesHandler:
             logger.debug("CDP: User-Agent + Client Hints set")
         except Exception as e:
             logger.debug(f"CDP User-Agent override: {e}")
+
+
+    async def _brand_list(self, page: uc.Tab, major_version: str) -> list[tuple[str, str]]:
+        """Brand list for Client Hints, reusing Chrome's own GREASE entry.
+
+        Chrome randomises the fake brand ("Not=A?Brand";v="99" and friends) per
+        release; a hardcoded one from an older Chrome is a giveaway. We read what
+        this Chrome really sends and only fix up the versions.
+        """
+        fallback = [("Chromium", major_version), ("Google Chrome", major_version)]
+        try:
+            raw = await page.evaluate(
+                "JSON.stringify((navigator.userAgentData?.brands || [])"
+                ".map(b => [b.brand, b.version]))"
+            )
+            real = json.loads(raw) if raw else []
+        except Exception as e:
+            logger.debug(f"Client Hints brands read failed: {e}")
+            return fallback
+
+        if not real:
+            return fallback
+        # Keep Chrome's order and GREASE brand, restamp the real browser brands.
+        known = ("Chromium", "Google Chrome")
+        return [(brand, major_version if brand in known else version) for brand, version in real]
 
     async def _apply_timezone(self, page: uc.Tab) -> None:
         """Set timezone via CDP."""
@@ -147,6 +176,53 @@ class CDPOverridesHandler:
         except Exception as e:
             logger.debug(f"CDP Color scheme override: {e}")
 
+    async def _apply_device_metrics(self, page: uc.Tab) -> None:
+        """Spoof screen.* at browser level.
+
+        width/height/deviceScaleFactor = 0 leave the viewport override disabled,
+        so window.inner*/devicePixelRatio keep reporting the real window and CSS
+        media queries stay consistent with them. Only screen.* is overridden, and
+        the Screen getters stay native - nothing for a detector to notice.
+        """
+        scr = self.profile.screen
+        try:
+            await page.send(
+                cdp.emulation.set_device_metrics_override(
+                    width=0,
+                    height=0,
+                    device_scale_factor=0,
+                    mobile=False,
+                    screen_width=scr.width,
+                    screen_height=scr.height,
+                )
+            )
+            logger.debug(f"CDP: Screen set to {scr.width}x{scr.height}")
+        except Exception as e:
+            logger.debug(f"CDP device metrics override: {e}")
+
+    async def _apply_hardware(self, page: uc.Tab) -> None:
+        """Spoof hardwareConcurrency and maxTouchPoints at browser level."""
+        nav = self.profile.navigator
+        try:
+            await page.send(
+                cdp.emulation.set_hardware_concurrency_override(
+                    hardware_concurrency=nav.hardware_concurrency
+                )
+            )
+            logger.debug(f"CDP: hardwareConcurrency set to {nav.hardware_concurrency}")
+        except Exception as e:
+            logger.debug(f"CDP hardwareConcurrency override: {e}")
+
+        try:
+            await page.send(
+                cdp.emulation.set_touch_emulation_enabled(
+                    enabled=nav.max_touch_points > 0,
+                    max_touch_points=nav.max_touch_points or None,
+                )
+            )
+        except Exception as e:
+            logger.debug(f"CDP touch emulation: {e}")
+
     async def _apply_stealth_script(self, page: uc.Tab) -> None:
         """Register stealth script for things CDP can't do.
 
@@ -154,7 +230,11 @@ class CDPOverridesHandler:
         """
         try:
             script = build_stealth_script(self.profile)
+            # Page.enable is REQUIRED: without it addScriptToEvaluateOnNewDocument
+            # returns an identifier but the script is never injected.
+            await page.send(cdp.page.enable())
             await page.send(cdp.page.add_script_to_evaluate_on_new_document(source=script))
+            self._registered.add(str(page.target.target_id))
             # Also inject immediately for current context
             await page.evaluate(script)
             logger.debug("CDP: Stealth script registered")
@@ -184,17 +264,3 @@ class CDPOverridesHandler:
         elif "Mac" in platform:
             return MACOS_VERSION
         return ""
-
-
-async def ensure_stealth_registered(page: uc.Tab, profile: FingerprintProfile) -> None:
-    """Ensure stealth script is registered for next document load.
-
-    Args:
-        page: Browser tab
-        profile: FingerprintProfile for stealth script
-    """
-    try:
-        script = build_stealth_script(profile)
-        await page.send(cdp.page.add_script_to_evaluate_on_new_document(source=script))
-    except Exception as e:
-        logger.debug(f"Stealth re-registration: {e}")

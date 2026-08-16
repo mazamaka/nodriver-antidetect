@@ -7,14 +7,16 @@ CDP is more reliable because it works at browser level before any page code exec
 from __future__ import annotations
 
 import asyncio
-import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import nodriver as uc
+import nodriver.cdp as cdp
 from loguru import logger
+from nodriver.core.connection import Connection
+from nodriver.core.util import ProxyForwarder
 
-from .cdp_handler import CDPOverridesHandler, ensure_stealth_registered
+from .cdp_handler import CDPOverridesHandler
 from .chrome_args import ChromeArgsBuilder
 from .config import AntidetectConfig, FingerprintProfile, get_profile
 from .profiles import load_profile_from_json
@@ -44,6 +46,7 @@ class AntidetectBrowser:
         sandbox: Use sandbox (set False for Docker)
         session: Session name for cookie persistence
         sessions_dir: Custom sessions directory
+        extensions: Paths to unpacked Chrome extensions (folders with manifest.json)
     """
 
     def __init__(
@@ -56,6 +59,7 @@ class AntidetectBrowser:
         sandbox: bool = True,
         session: str | None = None,
         sessions_dir: str | Path | None = None,
+        extensions: list[str | Path] | None = None,
     ) -> None:
         self.config = config or AntidetectConfig()
         self.profile = self._resolve_profile(profile)
@@ -63,8 +67,10 @@ class AntidetectBrowser:
         self.headless = headless or self.config.headless
         self.browser_args = browser_args or []
         self.sandbox = sandbox
+        self.extensions = self._resolve_extensions(extensions)
 
         self._browser: uc.Browser | None = None
+        self._proxy_forwarder: ProxyForwarder | None = None
 
         # CDP and Chrome args handlers
         self._cdp_handler = CDPOverridesHandler(self.profile)
@@ -72,7 +78,7 @@ class AntidetectBrowser:
 
         # Session management
         self._session_name = session
-        self._session_manager: SessionManager | None = None
+        self._session_manager: "SessionManager | None" = None
         self._user_data_dir: Path | None = None
 
         if session:
@@ -95,14 +101,27 @@ class AntidetectBrowser:
             return get_profile(profile)
         return profile
 
-    async def __aenter__(self) -> AntidetectBrowser:
+    def _resolve_extensions(self, extensions: list[str | Path] | None) -> list[Path]:
+        """Validate extension paths (must be unpacked folders with a manifest)."""
+        resolved = []
+        for ext_path in extensions or []:
+            path = Path(ext_path).resolve()
+            if not path.is_dir():
+                raise ValueError(f"Extension must be an unpacked directory: {path}")
+            if not (path / "manifest.json").exists():
+                raise ValueError(f"Extension missing manifest.json: {path}")
+            resolved.append(path)
+            logger.debug(f"Extension queued: {path.name}")
+        return resolved
+
+    async def __aenter__(self) -> "AntidetectBrowser":
         await self.start()
         return self
 
     async def __aexit__(self, *_) -> None:
         await self.stop()
 
-    async def start(self) -> AntidetectBrowser:
+    async def start(self) -> "AntidetectBrowser":
         """Start browser with stealth enabled at CDP level."""
         logger.info("Starting antidetect browser...")
 
@@ -116,6 +135,13 @@ class AntidetectBrowser:
         # Build Chrome arguments
         chrome_args = self._args_builder.build(self.browser_args)
 
+        # Proxy: Chrome takes host:port only, so authenticated proxies go through
+        # nodriver's local forwarder which holds the credentials.
+        if self.proxy:
+            self._proxy_forwarder = ProxyForwarder(self.proxy)
+            chrome_args.append(f"--proxy-server={self._proxy_forwarder.proxy_server}")
+            logger.info("Proxy enabled: {}", self._proxy_forwarder.proxy_server)
+
         # Create nodriver Config
         config = uc.Config(
             headless=self.headless,
@@ -126,6 +152,8 @@ class AntidetectBrowser:
         # Start browser
         self._browser = await uc.start(config=config)
 
+        await self._load_extensions()
+
         # Apply CDP-level overrides to first tab
         tabs = self._browser.tabs
         if tabs:
@@ -135,14 +163,39 @@ class AntidetectBrowser:
         logger.info(f"Browser ready: {self.profile.name}{session_info}")
         return self
 
+    async def _load_extensions(self) -> None:
+        """Install unpacked extensions via the Extensions CDP domain.
+
+        The old --load-extension flag is unreliable in current Chrome (it is
+        being phased out and conflicts with --test-type), while
+        Extensions.loadUnpacked installs and activates the extension for real.
+        """
+        if not self.extensions:
+            return
+
+        connection = Connection()
+        connection.websocket_url = self._browser.websocket_url
+        try:
+            for path in self.extensions:
+                extension_id = await connection.send(
+                    cdp.extensions.load_unpacked(path=str(path))
+                )
+                logger.info("Extension loaded: {} ({})", path.name, extension_id)
+        except Exception as e:
+            logger.warning("Extension loading failed: {}", e)
+        finally:
+            await connection.aclose()
+
     async def stop(self) -> None:
         """Stop browser with graceful shutdown to ensure cookies are saved."""
         if self._browser:
             try:
                 # Graceful shutdown: close all tabs first (flushes cookies)
                 for tab in self._browser.tabs:
-                    with contextlib.suppress(Exception):
+                    try:
                         await tab.close()
+                    except Exception:
+                        pass
 
                 # Wait for Chrome to flush data to disk
                 await asyncio.sleep(0.5)
@@ -174,7 +227,7 @@ class AntidetectBrowser:
             tabs = self._browser.tabs
             if tabs:
                 page = tabs[0]
-                await ensure_stealth_registered(page, self.profile)
+                await self._cdp_handler.ensure_registered(page)
             else:
                 page = await self._browser.get("about:blank", new_tab=True)
                 await self._cdp_handler.apply(page)

@@ -5,6 +5,7 @@ Builds stealth Chrome launch arguments for maximum antidetect effectiveness.
 
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -23,7 +24,7 @@ class ChromeArgsBuilder:
 
     def __init__(
         self,
-        profile: FingerprintProfile,
+        profile: "FingerprintProfile",
         sandbox: bool = True,
     ) -> None:
         """Initialize builder.
@@ -47,32 +48,38 @@ class ChromeArgsBuilder:
         args = [
             # === CRITICAL: Hide automation markers ===
             "--disable-blink-features=AutomationControlled",
+
             # === Suppress warnings ===
             "--test-type",
             "--no-default-browser-check",
             "--no-first-run",
+
             # === Language/locale at browser level ===
             *self._language_args(),
+
             # === Window size (real browser has this) ===
             *self._window_args(),
+
             # === Disable automation-related features ===
             "--disable-background-networking",
             "--disable-background-timer-throttling",
             "--disable-backgrounding-occluded-windows",
             "--disable-renderer-backgrounding",
+
             # === Make browser behave more like real ===
             "--disable-ipc-flooding-protection",
             "--disable-hang-monitor",
             "--disable-prompt-on-repost",
             "--disable-sync",
+
             # === GPU/WebGL - use real hardware ===
             "--enable-webgl",
             "--enable-webgl2",
             "--ignore-gpu-blocklist",
-            # === Disable WebGPU (not supported on most Linux systems) ===
-            # Multiple methods to ensure WebGPU is fully disabled
-            "--disable-features=WebGPU,WebGPUService,WebGPUExperimentalFeatures,Vulkan",
-            "--use-angle=gl",  # Use OpenGL instead of Vulkan (WebGPU needs Vulkan)
+
+            # === GPU backend matched to the host OS ===
+            *self._gpu_args(),
+
             # === Storage: disable encryption for portable sessions ===
             "--password-store=basic",
         ]
@@ -99,6 +106,21 @@ class ChromeArgsBuilder:
         return [
             f"--lang={lang}",
             f"--accept-lang={','.join(p.navigator.languages)}",
+        ]
+
+    def _gpu_args(self) -> list[str]:
+        """Build GPU/WebGPU arguments.
+
+        On Linux WebGPU usually needs Vulkan and is unavailable in a plain Chrome
+        install, so disabling it matches a real desktop. On macOS/Windows real
+        Chrome ships WebGPU and uses Metal/D3D — disabling it there is itself a
+        detectable anomaly, so we leave the defaults alone.
+        """
+        if sys.platform != "linux":
+            return []
+        return [
+            "--disable-features=WebGPU,WebGPUService,WebGPUExperimentalFeatures,Vulkan",
+            "--use-angle=gl",  # OpenGL instead of Vulkan (WebGPU needs Vulkan)
         ]
 
     def _window_args(self) -> list[str]:

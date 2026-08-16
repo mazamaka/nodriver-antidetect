@@ -1,27 +1,20 @@
-// Navigator properties spoofing
-// Handles: doNotTrack, globalPrivacyControl
-// Note: WebGPU is disabled via Chrome flags (--disable-features=WebGPU,Vulkan --use-angle=gl)
+// Navigator properties that CDP has no override for.
+// hardwareConcurrency, maxTouchPoints and screen.* are handled by the Emulation
+// domain instead - a patched prototype getter is exactly what fingerprint
+// checkers look for (pixelscan flags it as "Navigator: Detected").
 
-// doNotTrack - should be null or "1" for real browsers
-// null = user hasn't set preference (most common)
-// "1" = do not track enabled
-if (C.navigator?.doNotTrack !== undefined) {
-    Object.defineProperty(navigator, 'doNotTrack', {
-        get: () => C.navigator.doNotTrack,
-        configurable: true
-    });
+// deviceMemory has no CDP override, so JS is the only option - and only when the
+// real value differs from the profile.
+if (C.navigator?.deviceMemory && navigator.deviceMemory !== C.navigator.deviceMemory) {
+    const value = C.navigator.deviceMemory;
+    wrapGetter(Navigator.prototype, 'deviceMemory', function() { return value; });
 }
 
-// globalPrivacyControl - Chrome doesn't support it natively
-// Should be undefined in Chrome (not null, not false)
-// Only Firefox/Brave support it
-if ('globalPrivacyControl' in navigator) {
-    try {
-        delete navigator.globalPrivacyControl;
-    } catch (e) {
-        Object.defineProperty(navigator, 'globalPrivacyControl', {
-            get: () => undefined,
-            configurable: true
-        });
-    }
+// doNotTrack - real Chrome exposes it on Navigator.prototype and returns null
+// when the user has no preference. Defining it on the navigator instance creates
+// an own property that does not exist in a real browser, so patch the prototype
+// and only when the profile asks for something else.
+if (C.navigator?.doNotTrack !== undefined && navigator.doNotTrack !== C.navigator.doNotTrack) {
+    const value = C.navigator.doNotTrack;
+    wrapGetter(Navigator.prototype, 'doNotTrack', function() { return value; });
 }

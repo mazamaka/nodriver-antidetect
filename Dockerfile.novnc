@@ -101,6 +101,7 @@ RUN python3.12 -m pip install --no-cache-dir --upgrade --force-reinstall wrapt &
 COPY antidetect/ ./antidetect/
 COPY profiles/ ./profiles/
 COPY examples/ ./examples/
+COPY tools/ ./tools/
 
 # Copy entrypoint
 COPY entrypoint-novnc.sh /entrypoint-novnc.sh

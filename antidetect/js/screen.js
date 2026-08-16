@@ -1,28 +1,10 @@
-// === Screen properties (CDP setDeviceMetricsOverride is detectable!) ===
-// Note: Screen.prototype properties are DATA properties (not getters) in some Chrome builds
-// So we use defineProperty to override them with getters
-
-for (const [k, v] of Object.entries(C.screen)) {
-    // Override on Screen.prototype
-    defineProperty(Screen.prototype, k, {
-        get: () => v,
-        enumerable: true,
-        configurable: true
-    });
-
-    // Also override directly on window.screen for safety
-    defineProperty(window.screen, k, {
-        get: () => v,
-        enumerable: true,
-        configurable: true
-    });
-}
-
-// === Window dimensions ===
-for (const [k, v] of Object.entries(C.window)) {
-    defineProperty(window, k, {
-        get: () => v,
-        enumerable: true,
-        configurable: true
-    });
+// === Screen: availWidth/availHeight only ===
+// screen.width/height come from Emulation.setDeviceMetricsOverride, which keeps
+// the Screen getters native. It has no notion of the available area though and
+// reports avail == screen, while a real desktop always loses a strip to the menu
+// bar / taskbar. Patch just that delta, and only when it actually differs.
+for (const prop of ['availWidth', 'availHeight']) {
+    const value = C.screen?.[prop];
+    if (!value || screen[prop] === value) continue;
+    wrapGetter(Screen.prototype, prop, function() { return value; });
 }

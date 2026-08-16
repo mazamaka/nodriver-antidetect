@@ -1,5 +1,8 @@
-// === Battery API (realistic desktop values) ===
-if (navigator.getBattery) {
+// === Battery API ===
+// Chrome exposes getBattery() on every desktop platform and already reports
+// charging/level for a machine without a battery, so overriding it only adds a
+// patched function for detectors to find. Fill in only when the API is missing.
+if (!navigator.getBattery) {
     const battery = {
         charging: true,
         chargingTime: 0,
@@ -14,8 +17,9 @@ if (navigator.getBattery) {
         dispatchEvent: function() { return true; }
     };
 
-    const orig = navigator.getBattery;
-    navigator.getBattery = wrapFn(orig, function() {
-        return Promise.resolve(battery);
+    defineProperty(Navigator.prototype, 'getBattery', {
+        value: function getBattery() { return Promise.resolve(battery); },
+        enumerable: false,
+        writable: true
     });
 }

@@ -1,507 +1,193 @@
 # nodriver-antidetect
 
-Антидетект браузер на базе nodriver для автоматизации и мульти-аккаунтинга.
-Версия: 2.6.2
+Антидетект-браузер на базе nodriver для автоматизации и мульти-аккаунтинга.
+Версия: 2.7.0 · актуализировано 16.08.2026 (Chrome 151, nodriver 0.50.3)
 
 ## Архитектура
 
 ```
 antidetect/
-├── __init__.py     # Публичный API модуля
-├── browser.py      # AntidetectBrowser - wrapper над nodriver
-├── config.py       # Pydantic-модели + автоопределение Chrome
-├── stealth.py      # JS-скрипт инжекции fingerprint
-└── profiles/
-    ├── __init__.py # Утилиты для работы с профилями
-    └── loader.py   # Загрузка/сохранение JSON профилей
+├── __init__.py      # Публичный API
+├── browser.py       # AntidetectBrowser: старт, прокси, расширения, сессии
+├── cdp_handler.py   # CDP-оверрайды: UA, Client Hints, timezone, locale + регистрация stealth
+├── chrome_args.py   # Флаги Chrome
+├── config.py        # Pydantic-модели, ENV-конфиг, автоопределение версии Chrome
+├── session.py       # SessionManager (persistent cookies/localStorage)
+├── stealth.py       # Сборка stealth-скрипта из JS-модулей
+├── js/*.js          # JS-модули стелса
+└── profiles/loader.py
 
-profiles/           # JSON профили fingerprint (единственный источник!)
-├── mazamaka_local.json  # Профиль по умолчанию
-├── windows_chrome.json
-└── macos_chrome.json
+profiles/            # JSON-профили fingerprint (единственный источник!)
+tools/benchmark.py   # Замеры: baseline vs antidetect + скриншоты
+docs/                # Отчёт последнего прогона (benchmark.md/json) и скриншоты
 ```
 
 ### Поток данных
 
 ```
-JSON профиль → FingerprintProfile (Pydantic) → build_stealth_script() → CDP injection
+JSON профиль → FingerprintProfile (Pydantic) → CDP overrides + build_stealth_script() → Page.addScriptToEvaluateOnNewDocument
 ```
 
 ### Приоритет загрузки профилей
 
-1. `AD_PROFILE_PATH` (путь к JSON файлу) - **рекомендуется**
+1. `AD_PROFILE_PATH` (путь к JSON) — **рекомендуется**
 2. Переменные окружения `AD_*`
-3. Автоопределённые значения (Chrome версия, timezone offset)
+3. Автоопределённые значения (версия Chrome, timezone offset)
 
-## Ключевые паттерны
+## Ключевые инварианты
 
-### Stealth-инжекция (stealth.py)
+### Page.enable обязателен
 
-```javascript
-// wrapFn() - КРИТИЧЕСКИ ВАЖНО для обхода детекта
-// Сохраняет оригинальный toString()
-const wrapFn = (original, replacement) => {
-    replacement.toString = () => original.toString();
-    Object.defineProperty(replacement, 'name', { value: original.name, configurable: true });
-    return replacement;
-};
+`Page.addScriptToEvaluateOnNewDocument` возвращает идентификатор, но **не инжектит скрипт**, если домен Page не включён. Без `await page.send(cdp.page.enable())` весь JS-слой молча не работает (так было до 2.7.0 — screen/WebGL/hardware не применялись вовсе).
 
-// Все свойства ДОЛЖНЫ быть configurable: true
-Object.defineProperty(obj, prop, { ...desc, configurable: true });
-```
+### Скрипт регистрируется один раз на вкладку
 
-### Автоопределение Chrome (config.py)
+Повторная регистрация означает, что скрипт выполнится N раз при каждой загрузке. За этим следит `CDPOverridesHandler._registered`.
 
-```python
-from antidetect import get_chrome_version
+### CDP — канон, JS — крайний случай
 
-version = get_chrome_version()  # "132.0.6834.83" или из установленного Chrome
-```
+Подмена через CDP выполняется самим браузером: прототипы остаются нетронутыми, геттеры возвращают `[native code]`, own-properties не появляются. JS-патч виден любому чекеру, который сравнивает дескрипторы (pixelscan помечает такое как `Navigator: Detected`).
+
+Через CDP делаем: UA + Client Hints + Accept-Language (`Network.setUserAgentOverride`), timezone/locale (`Emulation.setTimezone/LocaleOverride`), `screen.*` (`Emulation.setDeviceMetricsOverride` с width/height/deviceScaleFactor = 0 — viewport не трогаем), `hardwareConcurrency` (`Emulation.setHardwareConcurrencyOverride`), `maxTouchPoints` (`Emulation.setTouchEmulationEnabled`).
+
+JS остаётся только там, где у CDP нет API: WebGL vendor/renderer, plugins, canvas noise, mediaDevices, battery, connection, permissions, deviceMemory.
+
+Прежде чем добавлять JS-патч — искать метод в домене `Emulation`.
+
+### Не подменять то, что и так правдоподобно
+
+Каждый патч детектируем. Правило: сначала прочитать реальное значение, вмешиваться только при аномалии. Замеренный пример: безусловная подмена `WebGLRenderingContext.getParameter` на машине с реальным GPU поднимала CreepJS stealth с 0% до 20%, ничего не скрывая.
+
+Условными сделаны: `webgl` (`mode: auto`), `plugins`, `media`, `battery`, `network`, `permissions`, `webdriver`.
+
+### wrapFn / wrapGetter
+
+Подмена обязана сохранять `toString()`, `name`, `length` оригинала и ставить `configurable: true`. Утилиты — в `js/utils.js`.
 
 ## Что подменяется
 
-| Категория | Детали |
-|-----------|--------|
-| **Navigator** | platform, userAgent, vendor, languages, hardwareConcurrency, deviceMemory, plugins, mimeTypes |
-| **Screen** | width, height, availWidth, availHeight, colorDepth, pixelDepth |
-| **Window** | devicePixelRatio, innerWidth, outerWidth, chrome object |
-| **WebGL** | vendor, renderer (UNMASKED_VENDOR/RENDERER_WEBGL) |
-| **Timezone** | getTimezoneOffset(), Intl.DateTimeFormat |
-| **Canvas** | toDataURL(), getImageData() с noise |
-| **Audio** | AudioContext с noise |
-| **Media** | enumerateDevices() |
-| **WebRTC** | iceTransportPolicy: 'relay' |
-| **Battery** | getBattery() |
-| **Network** | navigator.connection |
-| **Permissions** | permissions.query() |
+| Слой | Что | Как |
+|------|-----|-----|
+| CDP | User-Agent, Client Hints, Accept-Language | `Network.setUserAgentOverride` |
+| CDP | Timezone, locale (включая воркеры) | `Emulation.setTimezone/LocaleOverride` |
+| CDP | `screen.*` | `Emulation.setDeviceMetricsOverride` (width/height/scale = 0) |
+| CDP | `hardwareConcurrency`, `maxTouchPoints` | `Emulation.setHardwareConcurrencyOverride`, `setTouchEmulationEnabled` |
+| Chrome flags | `--window-size`, `--lang`, `--disable-blink-features=AutomationControlled` | аргументы запуска |
+| JS (нет CDP API) | canvas noise, `deviceMemory` | stealth-скрипт |
+| JS (условно) | WebGL, plugins, mediaDevices, battery, connection, permissions | только при аномалии |
 
-## Критические требования антидетекта
+**Не подменяется намеренно:** `window.innerWidth/outerWidth/devicePixelRatio` (сверяются с CSS-медиазапросами — bot.sannysoft MQ_SCREEN), WebGL в Worker-контексте (скрипт туда не доходит), `doNotTrack` при совпадении с реальным (`null`).
 
-### ОБЯЗАТЕЛЬНО
+## Запрещено
 
-- Сохранять toString() оригинальных функций через `wrapFn()`
-- Использовать `configurable: true` для всех свойств
-- Удалять маркеры автоматизации (`cdc_*`, `__webdriver_*`, etc.)
-- Консистентность fingerprint в рамках сессии
-- Профили ТОЛЬКО из JSON (не дублировать в Python)
-
-### ЗАПРЕЩЕНО
-
-- Добавлять debug-маркеры (`__stealth_applied`, `__stealth_profile` - УДАЛЕНЫ)
-- Использовать `except Exception: pass` без логирования
-- Хардкодить версию Chrome (использовать `get_chrome_version()`)
-- Несовпадение GPU vendor/renderer с реальным rendering
+- Debug-маркеры (`__stealth_applied` и подобные)
+- `except Exception: pass` без логирования
+- Хардкод версии Chrome (использовать `get_chrome_version()`)
+- Хардкод GREASE-бренда Client Hints (читать из `navigator.userAgentData.brands`)
+- Подмена ради подмены — см. инвариант выше
 
 ## Тестирование
 
-### Визуальные тесты
+```bash
+python tools/benchmark.py                                    # baseline + antidetect, все пробы
+python tools/benchmark.py --setups antidetect --probes creepjs
+python tools/benchmark.py --profile windows_chrome --output docs
+```
 
-- **CreepJS**: https://abrahamjuliot.github.io/creepjs/
-- **BrowserLeaks**: https://browserleaks.com/
-- **bot.sannysoft.com**: https://bot.sannysoft.com/
-- **pixelscan**: https://pixelscan.net/
+Пробы: `headers` (локальный HTTP-сервер ловит реальные заголовки), `js` (страница + Worker), `sannysoft`, `creepjs`, `pixelscan`.
 
-### Целевые метрики (CreepJS)
+Стенды: [CreepJS](https://abrahamjuliot.github.io/creepjs/), [bot.sannysoft.com](https://bot.sannysoft.com/), [BrowserLeaks](https://browserleaks.com/), [pixelscan](https://pixelscan.net/).
 
-- `like_headless` <= 31%
-- `headless` = 0%
-- `stealth` = 0%
+### Ориентиры (macOS, Chrome 151, профиль macos_chrome)
+
+`pixelscan.net/bot-check`: вердикт `You're Definitely a Human`, все сигналы (Navigator, Webdriver, CDP, User Agent, Plugins, Languages, DoNotTrack, VendorSub, ProductSub) — `Clear`. Любой `Detected` = регрессия JS-слоя.
+
+Замер antidetect не должен быть **хуже baseline** (чистого nodriver) на той же машине:
+
+| Метрика | baseline | antidetect |
+|---|---|---|
+| CreepJS headless / stealth / lies | 0% / 0% / 0 | 0% / 0% / 0 |
+| CreepJS like headless | 25% | 25% |
+| bot.sannysoft | 31 passed / 0 failed | 31 passed / 0 failed |
+
+Рост `stealth` или падение sannysoft после правок JS-слоя = регрессия.
 
 ## Запуск
 
 ```bash
-# Docker
-docker-compose up antidetect
-
-# Локально с профилем по умолчанию
-python examples/test_fingerprint.py --output ./output
-
-# С кастомным профилем
+docker compose up antidetect
 AD_PROFILE_PATH=profiles/windows_chrome.json python examples/basic_usage.py
+```
 
-# Программно
-from antidetect import AntidetectBrowser, get_profile
-
-async with AntidetectBrowser(profile="mazamaka_local") as browser:
+```python
+async with AntidetectBrowser(profile="macos_chrome") as browser:
     page = await browser.get("https://example.com")
 ```
 
+Профиль берём под ОС хоста: Linux-профиль на macOS — несогласованность, видимая детекторам.
+
 ## Chrome Extensions
 
-Программная загрузка расширений **не поддерживается** — Google Chrome игнорирует `--load-extension` флаг.
+Загружаются через CDP-домен `Extensions.loadUnpacked` (Chrome 138+), а не через `--load-extension`: флаг работает нестабильно и конфликтует с `--test-type`.
 
-**Решение**: установите расширение вручную в профиль сессии, оно сохранится автоматически.
+```python
+async with AntidetectBrowser(extensions=["./extensions/ublock"]) as browser:
+    ...
+```
+
+## Прокси
+
+`--proxy-server` для прокси без авторизации; для прокси с логином/паролем поднимается локальный форвардер `nodriver.core.util.ProxyForwarder` (креды не попадают в командную строку Chrome).
 
 ## Переменные окружения
 
 | Переменная | Описание | Default |
 |------------|----------|---------|
 | AD_PROFILE_PATH | Путь к JSON профилю | profiles/mazamaka_local.json |
-| AD_TIMEZONE | Timezone | Europe/Budapest |
-| AD_LOCALE | Locale | ru |
-| AD_SCREEN_WIDTH | Ширина экрана | 1920 |
-| AD_SCREEN_HEIGHT | Высота экрана | 1080 |
-| AD_WEBGL_VENDOR | WebGL vendor | Google Inc. (NVIDIA) |
-| AD_WEBGL_RENDERER | WebGL renderer | ANGLE (NVIDIA...) |
-| AD_USER_AGENT | User Agent | (автоопределение) |
-| AD_HEADLESS | Headless режим | false |
+| AD_TIMEZONE / AD_LOCALE | Timezone / locale | Europe/Budapest / ru |
+| AD_SCREEN_WIDTH / AD_SCREEN_HEIGHT | Экран | 1920 / 1080 |
+| AD_HARDWARE_CONCURRENCY / AD_DEVICE_MEMORY | Железо | 8 / 8 |
+| AD_PLATFORM | Платформа | Linux x86_64 |
+| AD_WEBGL_VENDOR / AD_WEBGL_RENDERER | WebGL | NVIDIA-строки |
+| AD_HEADLESS | Headless-режим | false |
 | PROXY_URL | Proxy URL | - |
 
 ## Известные ограничения
 
-- **WebRTC**: работает только с `iceTransportPolicy: 'relay'` (нужны TURN серверы)
+- **Worker-контексты**: JS-стелс туда не доходит (`addScriptToEvaluateOnNewDocument` не покрывает воркеры). CDP-оверрайды (timezone/locale/UA) — доходят. Каноничное решение: `Target.setAutoAttach` + инъекция в worker-таргеты.
+- **WebRTC**: работает только с `iceTransportPolicy: 'relay'` (нужны TURN-серверы)
 - **TLS/JA3**: не меняется (наследуется от Chrome)
 - **Canvas noise**: одинаковый seed на сессию
+- **WebGPU-флаги** применяются только на Linux: на macOS/Windows реальный Chrome отдаёт WebGPU, и его отключение само по себе аномалия
 
 ## Зависимости
 
-- **nodriver** >= 0.38 - async Chrome automation
-- **pydantic** >= 2.0 - валидация конфигов
-- **pydantic-settings** >= 2.0 - env variables
-- **loguru** - логирование
+nodriver >= 0.50.3, pydantic >= 2.13, pydantic-settings >= 2.12, loguru, httpx[socks]
 
 ## Идеи на будущее
 
-### IP-based fingerprint (как в Octo Browser)
-
-Автоматическое определение параметров из IP прокси:
-
-```python
-# При proxy != None автоматически подтягивать:
-'languages': {'type': 'ip'},   # Определить язык по GeoIP
-'timezone': {'type': 'ip'},    # Определить timezone по GeoIP
-'geolocation': {'type': 'ip'}, # Координаты по GeoIP
-'webrtc': {'type': 'ip'},      # WebRTC leak = proxy IP
-```
-
-**Реализация:**
-1. Сделать запрос через прокси к GeoIP сервису (ipapi.co, ip-api.com)
-2. Получить: country, timezone, languages, lat/lon
-3. Автоматически применить к профилю
-
-**Польза:** Консистентный fingerprint — если прокси US, то и timezone/language будут US.
-
----
-
-## Changelog v2.6.2 (2026-01-22)
-
-### PluginArray Type Check Fix
-
-**Проблема**: Sannysoft детектировал что `navigator.plugins` не является настоящим `PluginArray`:
-```
-Plugins is of type PluginArray: failed
-```
-
-**Причина**: Наш plugins.js создавал обычный JavaScript объект вместо объекта с правильным prototype chain.
-
-**Решение**: Используем `Object.create()` с реальными прототипами:
-```javascript
-const PluginArrayProto = Object.getPrototypeOf(navigator.plugins);
-const pluginArray = Object.create(PluginArrayProto);
-```
-
-**Результат**: `navigator.plugins instanceof PluginArray === true` ✅
-
-### MQ_SCREEN Fix (Media Query Screen Detection)
-
-**Проблема**: Sannysoft `MQ_SCREEN: FAIL` — CSS media queries видели реальное разрешение Xorg, а не spoofed.
-
-**Причина**: В docker-compose.yml Xorg разрешение было 1920x1080, но профиль использовал 3440x1440.
-
-**Решение**: Синхронизировать Xorg разрешение с профилем:
-```yaml
-# Screen resolution (VNC desktop size) - MUST match profile!
-- SCREEN_WIDTH=3440
-- SCREEN_HEIGHT=1440
-```
-
-**Результат**: `MQ_SCREEN: ok` ✅
-
-### Screen Properties Fix
-
-**Проблема**: Screen properties не подменялись при навигации, `add_script_to_evaluate_on_new_document` не работал.
-
-**Причина**:
-1. `Page.enable()` не вызывался перед регистрацией скрипта
-2. `Screen.prototype` свойства — DATA properties, не getters (в некоторых Chrome builds)
-
-**Решение**:
-1. Добавлен `_enable_page_domain()` в cdp_handler.py
-2. screen.js переписан с `defineProperty` вместо `wrapGetter`
-
-### prefers-color-scheme Fix
-
-**Проблема**: CreepJS показывал `prefersLightColor: true`, реальный браузер — `false`.
-
-**Решение**: Добавлен CDP override для dark mode:
-```python
-await page.send(
-    cdp.emulation.set_emulated_media(
-        features=[cdp.emulation.MediaFeature(name="prefers-color-scheme", value="dark")]
-    )
-)
-```
-
-### Результаты (Sannysoft)
-
-| Тест | До | После |
-|------|-----|-------|
-| Plugins Length | 5 ✅ | 5 ✅ |
-| Plugins is type PluginArray | failed ❌ | passed ✅ |
-| MQ_SCREEN | FAIL ❌ | ok ✅ |
-| All HEADCHR checks | ok ✅ | ok ✅ |
-
-### Результаты (CreepJS)
-
-| Метрика | Значение |
-|---------|----------|
-| like_headless | 31% ✅ |
-| headless | 33% |
-| stealth | 0% ✅ |
-| plugins | 5 ✅ |
-| WebGL confidence | high ✅ |
-
----
-
-## Changelog v2.6.1 (2026-01-22)
-
-### WebGPU Fingerprint Fix
-
-**Проблема**: CreepJS показывал хеш WebGPU `67860203` вместо `unsupported`, что не соответствовало реальному браузеру без WebGPU поддержки.
-
-**Решение**: Добавлены Chrome флаги для полного отключения WebGPU:
-
-```bash
---disable-features=WebGPU,WebGPUService,WebGPUExperimentalFeatures,Vulkan
---use-angle=gl
-```
-
-**Почему это работает**:
-- WebGPU требует Vulkan backend
-- `--use-angle=gl` заставляет Chrome использовать OpenGL вместо Vulkan
-- Без Vulkan `navigator.gpu` становится `undefined`
-- WebGL продолжает работать через OpenGL
-
-**Результат**: `webgpu: unsupported` ✅ — идентично реальному браузеру.
-
-### Navigator Properties Fix
-
-Исправлены все несоответствия Navigator с реальным Chrome:
-
-| Параметр | До | После | Реальный браузер |
-|----------|-----|-------|------------------|
-| webgpu | 67860203 | unsupported | unsupported ✅ |
-| userAgentData | 144.0.0.0 | 144.0.7559.59 | 144.0.7559.59 ✅ |
-| architecture | x86_64_64 | x86_64 | x86_64 ✅ |
-| platformVersion | 6.5.0 | (empty) | (empty) ✅ |
-
----
-
-## Changelog v2.6.0 (2026-01-22)
-
-### Docker GPU Support (NVIDIA)
-
-**Проблема**: Chrome с `--no-sandbox` отключает GPU для безопасности.
-
-**Решение**: Флаг `--disable-gpu-sandbox` разрешает GPU при отключенном основном sandbox.
-
-#### Запуск с GPU в Docker
-
-```bash
-# Требования:
-# 1. Native Docker Engine (не Docker Desktop на Linux!)
-# 2. nvidia-container-toolkit установлен
-# 3. xhost +local: выполнен на хосте
-
-xhost +local:
-docker compose up antidetect-gpu
-```
-
-#### Конфигурация docker-compose.yml
-
-```yaml
-antidetect-gpu:
-  runtime: nvidia
-  devices:
-    - /dev/dri:/dev/dri
-    - /dev/nvidia0:/dev/nvidia0
-    - /dev/nvidiactl:/dev/nvidiactl
-    - /dev/nvidia-modeset:/dev/nvidia-modeset
-  environment:
-    - DISPLAY=${DISPLAY:-:1}
-    - AD_SHOW_GUI=true
-    - NVIDIA_VISIBLE_DEVICES=all
-    - NVIDIA_DRIVER_CAPABILITIES=all,graphics,display
-  volumes:
-    - /tmp/.X11-unix:/tmp/.X11-unix:rw
-```
-
-#### Результаты (CreepJS тесты 2026-01-22)
-
-| Режим | GPU | WebGL confidence | like_headless | Окно на хосте |
-|-------|-----|------------------|---------------|---------------|
-| `antidetect` (Xvfb) | llvmpipe (software) | LOW | 44% | Нет |
-| `antidetect-gpu` (X11 forwarding) | NVIDIA RTX 3060 | HIGH | 38% | ❌ Да |
-| `antidetect-xorg` (Xorg+NVIDIA) | **NVIDIA RTX 3060** | **HIGH** | **44%** | ✅ **Нет** |
-| `antidetect-novnc` (Xorg+VNC) | **NVIDIA RTX 3060** | **HIGH** | **44%** | ✅ **Веб** |
-| `antidetect-vgl` (VirtualGL) | llvmpipe (software) | LOW | 44% | Нет |
-| Локально (GUI) | NVIDIA RTX 3060 | HIGH | 31% | Да |
-
-**⚠️ КРИТИЧНО: НИКОГДА не используй AD_HEADLESS=true!**
-
-| Параметр | Результат | Почему опасно |
-|----------|-----------|---------------|
-| AD_HEADLESS=true | headless: 33%, screen: 800x600 | Сразу палится антифродом! |
-
-`AD_HEADLESS=true` включает реальный headless режим Chrome, который детектируется антифрод системами. Вместо этого используй Docker с виртуальным дисплеем:
-- **antidetect-xorg** — для headless GPU (рекомендуется для продакшена)
-- **antidetect** (Xvfb) — для headless без GPU
-
-#### Headless GPU: antidetect-xorg (рекомендуется)
-
-```bash
-# Запуск с реальным GPU без окна на хосте
-docker compose up antidetect-xorg
-```
-
-**Требования:**
-- NVIDIA GPU
-- nvidia-container-toolkit
-- privileged mode (для Xorg)
-
-#### Веб-доступ к браузеру: antidetect-novnc
-
-Смотреть браузер через веб-интерфейс без X11 forwarding:
-
-```bash
-# Запуск
-docker compose up antidetect-novnc
-
-# Открыть в браузере
-http://localhost:6080/vnc.html
-# Пароль: antidetect
-```
-
-**Особенности:**
-- Реальный GPU (NVIDIA RTX 3060)
-- WebGL confidence: HIGH
-- Доступ через веб-браузер на порту 6080
-- VNC порт 5900 (опционально для VNC клиентов)
-- Не требует xhost или X11 forwarding
-
-#### VirtualGL НЕ работает с Chrome
-
-**Исследование (2026-01-22)**: VirtualGL не может предоставить GPU для Chrome:
-- VirtualGL перехватывает GLX вызовы через LD_PRELOAD
-- Chrome использует ANGLE/EGL для WebGL (не GLX)
-- Флаги `--use-angle=gl`, `--use-gl=egl` не помогают
-- Даже с vglrun Chrome видит только llvmpipe на Xvfb
-
-**Вывод**: Для headless GPU с Chrome нужен либо:
-1. X11 forwarding к реальному X-серверу с GPU (antidetect-gpu)
-2. Xorg с NVIDIA driver внутри Docker (требует privileged mode)
-3. Xpra/TurboVNC с VirtualGL backend
-
-**⚠️ Важно**: Docker Desktop на Linux НЕ поддерживает GPU — работает только Native Docker Engine.
-
-**Переключение между Docker Desktop и Native Docker Engine:**
-```bash
-# Посмотреть доступные контексты
-docker context ls
-
-# Переключиться на Native Docker Engine (для GPU)
-docker context use default
-
-# Переключиться обратно на Docker Desktop
-docker context use desktop-linux
-```
-
----
-
-## Changelog v2.5.1 (2026-01-21)
-
-### Dynamic User-Agent
-
-- User-Agent теперь генерируется динамически из реальной версии Chrome
-- При обновлении Chrome UA автоматически обновляется
-- Версия Chrome определяется через `get_chrome_version()`
-
-## Changelog v2.5.0 (2026-01-21)
-
-### Рефакторинг (SRP)
-
-- Выделен `CDPOverridesHandler` из browser.py
-- Выделен `ChromeArgsBuilder` из browser.py
-- JS код вынесен в отдельные файлы (antidetect/js/)
-
-## Changelog v2.3.0 (2026-01-21)
-
-### CDP-уровень подмена (вместо только JS injection)
-
-**Принцип**: Используем CDP где возможно, JS только для того что CDP не умеет.
-CDP надёжнее потому что работает на уровне браузера ДО выполнения любого кода страницы.
-
-**Что делается через CDP:**
-- `Network.setUserAgentOverride` — User-Agent + Client Hints на уровне HTTP заголовков
-- `Emulation.setTimezoneOverride` — timezone на уровне браузера
-- `Emulation.setLocaleOverride` — locale на уровне браузера
-
-**Что делается через JS (CDP не поддерживает):**
-- WebGL vendor/renderer
-- navigator.plugins / mimeTypes
-- window.chrome object
-- Canvas/audio noise
-- MediaDevices, WebRTC, Battery, Network API
-
-**⚠️ НЕ ИСПОЛЬЗОВАТЬ:** `Emulation.setDeviceMetricsOverride` — включает режим эмуляции, который детектируется! Вместо этого используем `--window-size` flag + JS spoofing.
-
-### Результаты (CreepJS)
-
-| Метрика | Antidetect | Реальный браузер |
-|---------|------------|------------------|
-| like_headless | **31%** | 31% ✅ |
-| headless | **0%** | 0% ✅ |
-| stealth | **0%** | 0% ✅ |
-| plugins | **5** | 5 ✅ |
-| mimeTypes | **2** | 2 ✅ |
-| Client Hints | **работают** | работают ✅ |
-
-### Новый метод `_apply_cdp_overrides()`
-```python
-async def _apply_cdp_overrides(self, page):
-    # 1. User-Agent + Client Hints на уровне HTTP
-    await page.send(cdp.network.set_user_agent_override(...))
-
-    # 2. Timezone на уровне браузера
-    await page.send(cdp.emulation.set_timezone_override(...))
-
-    # 3. Locale на уровне браузера
-    await page.send(cdp.emulation.set_locale_override(...))
-
-    # 4. JS stealth для остального
-    await page.send(cdp.page.add_script_to_evaluate_on_new_document(...))
-```
-
-## Changelog v2.2.0
-
-### КРИТИЧЕСКИЙ ФИХ: Тайминг инъекции stealth
-
-**Проблема**: Stealth скрипт инъектировался ПОСЛЕ загрузки страницы.
-
-**Решение**: Stealth регистрируется ПЕРЕД навигацией.
-
-### Добавлено
-- `navigator.pdfViewerEnabled` = true
-- `navigator.cookieEnabled` = true
-
-## Changelog v2.1.0
-
-- Удалены debug-маркеры `__stealth_applied` (критично для антидетекта!)
-- Добавлена подмена `navigator.plugins` и `mimeTypes`
-- Добавлен объект `window.chrome` (runtime, csi, loadTimes)
-- Добавлена подмена `navigator.getBattery()` и `navigator.connection`
-- Добавлена подмена `permissions.query()`
-- Автоопределение версии Chrome (`get_chrome_version()`)
-- Убрано дублирование профилей - только JSON
-- Timezone offset через zoneinfo (правильный расчёт DST)
-- Улучшена обработка ошибок (без `except Exception: pass`)
+- **Инъекция в Worker-таргеты** через `Target.setAutoAttach(wait_for_debugger_on_start=True)` — закроет расхождение GPU между главным потоком и воркером.
+- **IP-based fingerprint**: при заданном прокси подтягивать timezone/languages/geolocation по GeoIP (ipapi.co, ip-api.com), чтобы профиль соответствовал стране выхода.
+
+## Changelog v2.7.0 (2026-08-16)
+
+Актуализация под Chrome 151 / nodriver 0.50.3 и починка того, что молча не работало:
+
+- **`Page.enable` перед регистрацией stealth-скрипта.** До этого весь JS-слой не применялся: screen, WebGL, canvas noise, media devices — ничего.
+- **`hardwareConcurrency` / `deviceMemory` / `maxTouchPoints`** из профиля не доезжали до JS-конфига — исправлено.
+- **`proxy=` игнорировался** (браузер ходил напрямую) — теперь `--proxy-server` + `ProxyForwarder` для прокси с авторизацией.
+- **`extensions=`** был описан в README, но код удалён в e2f5d34 — восстановлен и переведён на `Extensions.loadUnpacked`.
+- **`navigator.webdriver`** подменялся на `undefined`, хотя реальный Chrome отдаёт `false` — теперь вмешиваемся только если флаг поднят.
+- **pixelscan.net добавлен в замеры** (`bot-check` + `fingerprint-check`): вердикт `human`, все сигналы `Clear`.
+- **`screen.width/height`, `hardwareConcurrency`, `maxTouchPoints` переехали с JS на CDP** (`Emulation.setDeviceMetricsOverride` / `setHardwareConcurrencyOverride` / `setTouchEmulationEnabled`). pixelscan помечал JS-версию как `Navigator: Detected`; после переноса геттеры снова нативные и все сигналы `Clear`. В JS остался только `avail*` — CDP отдаёт `avail == screen`, а это стоило +6% like-headless в CreepJS.
+- **`doNotTrack`** определялся на инстансе `navigator` (own property, которого нет у реального Chrome) → `DoNotTrack: Detected` на pixelscan. Теперь патч на прототипе и только при несовпадении.
+- **`window.inner*` больше не подделываются** — это ломало MQ_SCREEN в bot.sannysoft.
+- **WebGL-спуф стал условным** (`mode: auto`): CreepJS stealth 20% → 0%.
+- **plugins/battery/connection/permissions/media** — подмена только при аномалии; исправлен тип `PluginArray`.
+- **GREASE-бренд Client Hints** читается из браузера, а не хардкодится (`Not-A.Brand/24` → реальный `Not=A?Brand/99`).
+- **WebGPU-флаги и `--use-angle=gl`** — только на Linux.
+- Скрипт регистрируется один раз на вкладку (было — при каждой навигации).
+- `COPY scripts/` в Dockerfile ломал сборку (папки нет в репозитории) — убрано.
+- `tools/benchmark.py` вместо `examples/test_fingerprint*.py`; пробы `headers`/`js`/`sannysoft`/`creepjs`/`pixelscan`, отчёты и скриншоты в `docs/`.
+
+История версий 2.1.0–2.6.1 — в git log.

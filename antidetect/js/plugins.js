@@ -1,7 +1,11 @@
 // === Navigator: Plugins & MimeTypes ===
-// These MUST be spoofed via JS as CDP has no API for this
-// CRITICAL: Must properly inherit from PluginArray/MimeTypeArray for instanceof checks
+// CDP has no API for this, so JS is the only option. Inheriting the real
+// prototypes keeps instanceof and Object.prototype.toString honest.
+// Headful Chrome already reports exactly the PDF plugins we want, so only step
+// in when the real list is wrong (old headless reports none).
 (function() {
+    if (navigator.plugins.length === C.plugins.length) return;
+
     // Get real prototypes from original navigator.plugins/mimeTypes
     const realPlugins = navigator.plugins;
     const realMimeTypes = navigator.mimeTypes;
